@@ -10,18 +10,26 @@ import { ChatView } from '@/components/ChatView';
 import { ChatProfilePage } from '@/components/ChatProfilePage';
 import { ProfilePage } from '@/components/ProfilePage';
 import { MatchesSearch } from '@/components/MatchesSearch';
+import { EditProfilePage } from '@/components/EditProfilePage';
+import { NotificationsPage } from '@/components/NotificationsPage';
+import { PrivacySafetyPage } from '@/components/PrivacySafetyPage';
+import { SettingsPage } from '@/components/SettingsPage';
+import { AudioCallPage } from '@/components/AudioCallPage';
 import { useOnboarding, useDiscovery } from '@/hooks/use-app';
-import { MOCK_CHATS, ChatThread } from '@/lib/data';
+import { MOCK_CHATS, ChatThread, UserProfile } from '@/lib/data';
 import { Heart, Sparkles } from 'lucide-react';
 
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
+type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
 
 const Index = () => {
   const { step, setStep, dob, setDob, profile, setProfile, ageError, verifyAge, completeProfile } = useOnboarding();
   const { currentProfile, like, skip, matches, hasMore } = useDiscovery();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
-  const [viewingProfile, setViewingProfile] = useState<ChatThread | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
+  const [profileSubPage, setProfileSubPage] = useState<SubPage>(null);
+  const [callingUser, setCallingUser] = useState<UserProfile | null>(null);
 
   const unreadCount = MOCK_CHATS.reduce((sum, c) => sum + c.unread, 0);
 
@@ -30,9 +38,45 @@ const Index = () => {
   if (step === 'age') return <AgeVerification dob={dob} onDobChange={setDob} onVerify={verifyAge} error={ageError} />;
   if (step === 'profile') return <ProfileSetup profile={profile} onUpdate={setProfile} onComplete={completeProfile} />;
 
-  // Chat profile view
+  // Profile sub-pages
+  if (profileSubPage === 'edit') return <EditProfilePage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'notifications') return <NotificationsPage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'settings') return <SettingsPage onBack={() => setProfileSubPage(null)} />;
+
+  // Audio call page
+  if (callingUser) {
+    return (
+      <AudioCallPage
+        user={callingUser}
+        direction="outgoing"
+        onEnd={() => setCallingUser(null)}
+      />
+    );
+  }
+
+  // Profile view (from search, matches, or chat)
   if (viewingProfile) {
-    return <ChatProfilePage user={viewingProfile.user} onBack={() => setViewingProfile(null)} />;
+    return (
+      <ChatProfilePage
+        user={viewingProfile}
+        onBack={() => setViewingProfile(null)}
+        onMessage={() => {
+          // Find existing chat or go back
+          const existingChat = MOCK_CHATS.find(c => c.user.id === viewingProfile.id);
+          setViewingProfile(null);
+          if (existingChat) {
+            setActiveChat(existingChat);
+          } else {
+            setActiveTab('chat');
+          }
+        }}
+        onCall={() => {
+          setViewingProfile(null);
+          setCallingUser(viewingProfile);
+        }}
+      />
+    );
   }
 
   // Chat view
@@ -41,7 +85,7 @@ const Index = () => {
       <ChatView
         chat={activeChat}
         onBack={() => setActiveChat(null)}
-        onViewProfile={() => setViewingProfile(activeChat)}
+        onViewProfile={() => setViewingProfile(activeChat.user)}
       />
     );
   }
@@ -89,7 +133,10 @@ const Index = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <MatchesSearch matches={matches} />
+              <MatchesSearch
+                matches={matches}
+                onViewProfile={(p) => setViewingProfile(p)}
+              />
             </motion.div>
           )}
 
@@ -107,7 +154,7 @@ const Index = () => {
               <ChatList
                 chats={MOCK_CHATS}
                 onSelect={setActiveChat}
-                onViewProfile={(chat) => setViewingProfile(chat)}
+                onViewProfile={(chat) => setViewingProfile(chat.user)}
               />
             </motion.div>
           )}
@@ -119,7 +166,10 @@ const Index = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <ProfilePage />
+              <ProfilePage
+                onNavigate={setProfileSubPage}
+                onLogout={() => setStep('welcome')}
+              />
             </motion.div>
           )}
         </AnimatePresence>

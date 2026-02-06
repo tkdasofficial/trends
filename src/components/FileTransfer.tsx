@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Image, Film, Download, X, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { FileText, Image, Film, X, Check, AlertTriangle, Loader2, Download } from 'lucide-react';
 
 export interface FileTransferRequest {
   id: string;
@@ -27,6 +27,21 @@ function getFileIcon(type: string) {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
+function downloadFileToDevice(fileName: string, fileType: string) {
+  // Create a simulated file blob and trigger a real browser download
+  const dummyContent = `This is a simulated download of ${fileName}`;
+  const blob = new Blob([dummyContent], { type: fileType || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 interface FileTransferIncomingProps {
   request: FileTransferRequest;
   onAccept: (id: string) => void;
@@ -48,7 +63,9 @@ export function FileTransferIncoming({ request, onAccept, onReject }: FileTransf
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground truncate">{request.fileName}</p>
-          <p className="text-xs text-muted-foreground">{formatFileSize(request.fileSize)}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatFileSize(request.fileSize)} • from {request.senderName}
+          </p>
         </div>
       </div>
 
@@ -56,10 +73,10 @@ export function FileTransferIncoming({ request, onAccept, onReject }: FileTransf
         <div className="flex items-center gap-2">
           <motion.button
             onClick={() => onAccept(request.id)}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-green-500 py-2 text-xs font-semibold text-primary-foreground"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-green-500 py-2 text-xs font-semibold text-white"
             whileTap={{ scale: 0.95 }}
           >
-            <Check className="h-3.5 w-3.5" /> Accept
+            <Download className="h-3.5 w-3.5" /> Accept & Download
           </motion.button>
           <motion.button
             onClick={() => onReject(request.id)}
@@ -89,7 +106,7 @@ export function FileTransferIncoming({ request, onAccept, onReject }: FileTransf
 
       {request.status === 'completed' && (
         <div className="flex items-center gap-1.5 text-xs text-green-600">
-          <Check className="h-3.5 w-3.5" /> File received successfully
+          <Check className="h-3.5 w-3.5" /> File downloaded to your device
         </div>
       )}
 
@@ -101,7 +118,7 @@ export function FileTransferIncoming({ request, onAccept, onReject }: FileTransf
 
       {request.status === 'failed' && (
         <div className="flex items-center gap-1.5 text-xs text-destructive">
-          <AlertTriangle className="h-3.5 w-3.5" /> Upload failed
+          <AlertTriangle className="h-3.5 w-3.5" /> Download failed
         </div>
       )}
     </motion.div>
@@ -165,15 +182,11 @@ export function FileTransferOutgoing({ request }: FileTransferOutgoingProps) {
 
       {request.status === 'failed' && (
         <p className="text-xs text-primary-foreground/70 flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5" /> Upload failed – network issue
+          <AlertTriangle className="h-3.5 w-3.5" /> Upload failed – file exceeds 5MB limit
         </p>
       )}
     </motion.div>
   );
-}
-
-interface FileSendButtonProps {
-  onSendFile: (file: File) => void;
 }
 
 export function useFileTransfer() {
@@ -207,10 +220,9 @@ export function useFileTransfer() {
     };
     setTransfers(prev => [...prev, req]);
 
-    // Simulate acceptance after 2s, then uploading
+    // Simulate acceptance then upload
     setTimeout(() => {
       setTransfers(prev => prev.map(t => t.id === req.id ? { ...t, status: 'accepted' } : t));
-      // Start simulated upload
       let progress = 0;
       const interval = setInterval(() => {
         progress += Math.random() * 25 + 10;
@@ -242,6 +254,9 @@ export function useFileTransfer() {
 
   const acceptTransfer = useCallback((id: string) => {
     setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'uploading', progress: 0 } : t));
+    
+    const transfer = transfers.find(t => t.id === id) || { fileName: 'file', fileType: 'application/octet-stream' };
+    
     let progress = 0;
     const interval = setInterval(() => {
       progress += Math.random() * 25 + 10;
@@ -249,11 +264,13 @@ export function useFileTransfer() {
         progress = 100;
         clearInterval(interval);
         setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'completed', progress: 100 } : t));
+        // Actually download file to device
+        downloadFileToDevice(transfer.fileName, transfer.fileType);
       } else {
         setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'uploading', progress: Math.min(99, Math.round(progress)) } : t));
       }
     }, 500);
-  }, []);
+  }, [transfers]);
 
   const rejectTransfer = useCallback((id: string) => {
     setTransfers(prev => prev.map(t => t.id === id ? { ...t, status: 'rejected' } : t));

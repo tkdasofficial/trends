@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ChatThread, ChatMessage, censorMessage } from '@/lib/data';
-import { ArrowLeft, Send, Paperclip, Phone, PhoneOff } from 'lucide-react';
+import { ArrowLeft, Send, Paperclip, Phone } from 'lucide-react';
 import { FileTransferIncoming, FileTransferOutgoing, useFileTransfer } from './FileTransfer';
 import { AudioCallPage } from './AudioCallPage';
 
@@ -17,13 +17,12 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
   ]);
   const [input, setInput] = useState('');
   const [violations, setViolations] = useState(0);
-  const [showCallPage, setShowCallPage] = useState(false);
+  const [callState, setCallState] = useState<null | 'outgoing' | 'incoming'>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { transfers, sendFile, receiveFile, acceptTransfer, rejectTransfer } = useFileTransfer();
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, transfers]);
@@ -35,6 +34,14 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
     }, 4000);
     return () => clearTimeout(t);
   }, [receiveFile, chat.user.name]);
+
+  // Simulate incoming call after 8s
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setCallState('incoming');
+    }, 8000);
+    return () => clearTimeout(t);
+  }, []);
 
   const sendMessage = useCallback(() => {
     if (!input.trim()) return;
@@ -55,12 +62,12 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
     e.target.value = '';
   }, [sendFile]);
 
-  if (showCallPage) {
+  if (callState) {
     return (
       <AudioCallPage
         user={chat.user}
-        direction="outgoing"
-        onEnd={() => setShowCallPage(false)}
+        direction={callState}
+        onEnd={() => setCallState(null)}
       />
     );
   }
@@ -83,7 +90,7 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
           <p className="text-xs text-muted-foreground">Online</p>
         </div>
         <motion.button
-          onClick={() => setShowCallPage(true)}
+          onClick={() => setCallState('outgoing')}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           whileTap={{ scale: 0.9 }}
         >
@@ -133,7 +140,7 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input - fixed at bottom */}
+      {/* Input */}
       <div className="border-t border-border bg-card px-3 py-2.5 sm:px-5 sm:py-3">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <input

@@ -1,15 +1,18 @@
 import { motion } from 'framer-motion';
 import { UserProfile } from '@/lib/data';
-import { ArrowLeft, MapPin, Copy, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Copy, Check, MessageCircle, Phone, Flag } from 'lucide-react';
 import { useState } from 'react';
 
 interface ChatProfilePageProps {
   user: UserProfile;
   onBack: () => void;
+  onMessage?: () => void;
+  onCall?: () => void;
 }
 
-export function ChatProfilePage({ user, onBack }: ChatProfilePageProps) {
+export function ChatProfilePage({ user, onBack, onMessage, onCall }: ChatProfilePageProps) {
   const [copied, setCopied] = useState(false);
+  const [reported, setReported] = useState(false);
 
   const copyUID = () => {
     navigator.clipboard.writeText(user.uid);
@@ -18,7 +21,7 @@ export function ChatProfilePage({ user, onBack }: ChatProfilePageProps) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-[100dvh] flex-col bg-background">
       {/* Header */}
       <div className="relative gradient-hero px-4 pb-24 pt-12 sm:px-6">
         <button onClick={onBack} className="mb-4 text-primary-foreground/80 hover:text-primary-foreground">
@@ -83,7 +86,41 @@ export function ChatProfilePage({ user, onBack }: ChatProfilePageProps) {
               <p className="text-xs text-muted-foreground">Interests</p>
             </div>
           </div>
+
+          {/* Action buttons */}
+          <div className="mt-6 flex gap-3">
+            {onMessage && (
+              <motion.button
+                onClick={onMessage}
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl gradient-primary py-3 text-sm font-bold text-primary-foreground"
+                whileTap={{ scale: 0.97 }}
+              >
+                <MessageCircle className="h-4 w-4" /> Message
+              </motion.button>
+            )}
+            {onCall && (
+              <motion.button
+                onClick={onCall}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500 text-white shrink-0"
+                whileTap={{ scale: 0.95 }}
+              >
+                <Phone className="h-5 w-5" />
+              </motion.button>
+            )}
+          </div>
         </motion.div>
+      </div>
+
+      {/* Report */}
+      <div className="mx-auto mt-6 max-w-lg px-4 pb-8 sm:px-6">
+        <button
+          onClick={() => setReported(true)}
+          disabled={reported}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-card p-3.5 shadow-card text-sm text-destructive hover:bg-destructive/5 transition-colors disabled:opacity-50"
+        >
+          <Flag className="h-4 w-4" />
+          {reported ? 'Reported' : 'Report User'}
+        </button>
       </div>
     </div>
   );

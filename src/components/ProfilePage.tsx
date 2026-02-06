@@ -5,7 +5,14 @@ import { generateUID } from '@/lib/data';
 
 const USER_UID = generateUID();
 
-export function ProfilePage() {
+type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
+
+interface ProfilePageProps {
+  onNavigate?: (page: ProfileSubPage) => void;
+  onLogout?: () => void;
+}
+
+export function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) {
   const [copied, setCopied] = useState(false);
 
   const copyUID = () => {
@@ -13,6 +20,13 @@ export function ProfilePage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const menuItems = [
+    { icon: Edit3, label: 'Edit Profile', sub: 'Update your info', page: 'edit' as const },
+    { icon: Bell, label: 'Notifications', sub: 'Manage alerts', page: 'notifications' as const },
+    { icon: Shield, label: 'Privacy & Safety', sub: 'Moderation rules', page: 'privacy' as const },
+    { icon: Settings, label: 'Settings', sub: 'Account preferences', page: 'settings' as const },
+  ];
 
   return (
     <div className="flex-1 overflow-y-auto pb-24">
@@ -55,14 +69,10 @@ export function ProfilePage() {
 
       {/* Menu */}
       <div className="mx-auto mt-6 max-w-lg px-4 space-y-2 sm:px-6">
-        {[
-          { icon: Edit3, label: 'Edit Profile', sub: 'Update your info' },
-          { icon: Bell, label: 'Notifications', sub: 'Manage alerts' },
-          { icon: Shield, label: 'Privacy & Safety', sub: 'Moderation rules' },
-          { icon: Settings, label: 'Settings', sub: 'Account preferences' },
-        ].map(({ icon: Icon, label, sub }) => (
+        {menuItems.map(({ icon: Icon, label, sub, page }) => (
           <motion.button
             key={label}
+            onClick={() => onNavigate?.(page)}
             className="flex w-full items-center gap-3 rounded-2xl bg-card p-3.5 shadow-card text-left transition-colors hover:bg-muted/50 sm:gap-4 sm:p-4"
             whileTap={{ scale: 0.98 }}
           >
@@ -78,6 +88,7 @@ export function ProfilePage() {
         ))}
 
         <motion.button
+          onClick={onLogout}
           className="flex w-full items-center gap-3 rounded-2xl bg-card p-3.5 shadow-card text-left transition-colors hover:bg-destructive/5 sm:gap-4 sm:p-4"
           whileTap={{ scale: 0.98 }}
         >

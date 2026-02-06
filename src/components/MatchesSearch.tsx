@@ -5,11 +5,12 @@ import { UserProfile, MOCK_PROFILES } from '@/lib/data';
 
 interface MatchesSearchProps {
   matches: UserProfile[];
+  onViewProfile?: (profile: UserProfile) => void;
 }
 
 const GENDER_OPTIONS = ['All', 'Male', 'Female', 'Non-binary'];
 
-export function MatchesSearch({ matches }: MatchesSearchProps) {
+export function MatchesSearch({ matches, onViewProfile }: MatchesSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filterGender, setFilterGender] = useState('All');
@@ -21,7 +22,6 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
 
     let pool = MOCK_PROFILES;
 
-    // Apply filters
     if (filterGender !== 'All') {
       pool = pool.filter(p => p.gender.toLowerCase() === filterGender.toLowerCase());
     }
@@ -32,7 +32,6 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
       pool = pool.filter(p => p.age <= parseInt(filterMaxAge));
     }
 
-    // Apply text search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       pool = pool.filter(p =>
@@ -97,7 +96,6 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
         >
-          {/* Gender */}
           <div>
             <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Gender</label>
             <div className="flex flex-wrap gap-1.5">
@@ -117,7 +115,6 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
             </div>
           </div>
 
-          {/* Age range */}
           <div>
             <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Age Range</label>
             <div className="flex items-center gap-2">
@@ -158,7 +155,7 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
             <p className="text-xs text-muted-foreground mb-3">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} found</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {searchResults.map(m => (
-                <ProfileGridCard key={m.id} profile={m} />
+                <ProfileGridCard key={m.id} profile={m} onClick={() => onViewProfile?.(m)} />
               ))}
             </div>
           </div>
@@ -173,7 +170,7 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {matches.map(m => (
-                <ProfileGridCard key={m.id} profile={m} />
+                <ProfileGridCard key={m.id} profile={m} onClick={() => onViewProfile?.(m)} />
               ))}
             </div>
           )}
@@ -183,12 +180,14 @@ export function MatchesSearch({ matches }: MatchesSearchProps) {
   );
 }
 
-function ProfileGridCard({ profile }: { profile: UserProfile }) {
+function ProfileGridCard({ profile, onClick }: { profile: UserProfile; onClick?: () => void }) {
   return (
-    <motion.div
-      className="overflow-hidden rounded-2xl bg-card shadow-card"
+    <motion.button
+      onClick={onClick}
+      className="overflow-hidden rounded-2xl bg-card shadow-card text-left w-full"
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
+      whileTap={{ scale: 0.97 }}
     >
       <div className="flex h-28 items-center justify-center gradient-primary sm:h-32">
         <span className="text-3xl font-bold text-primary-foreground/30 sm:text-4xl">{profile.name[0]}</span>
@@ -201,6 +200,6 @@ function ProfileGridCard({ profile }: { profile: UserProfile }) {
         </p>
         <p className="mt-0.5 text-[9px] font-mono text-muted-foreground">{profile.uid}</p>
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
