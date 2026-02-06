@@ -1,5 +1,6 @@
 export interface UserProfile {
   id: string;
+  uid: string;
   name: string;
   age: number;
   gender: string;
@@ -7,7 +8,13 @@ export interface UserProfile {
   interests: string[];
   avatar: string;
   location?: string;
+  country?: string;
+  city?: string;
   distance?: string;
+}
+
+export function generateUID(): string {
+  return 'TR-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 export interface ChatMessage {
@@ -51,11 +58,11 @@ export function censorMessage(text: string): { censored: string; hasViolation: b
 }
 
 export const MOCK_PROFILES: UserProfile[] = [
-  { id: '1', name: 'Sophia', age: 24, gender: 'Female', bio: 'Coffee lover ☕ Adventure seeker 🌍', interests: ['Travel', 'Photography', 'Yoga'], avatar: '', location: 'New York', distance: '3 mi' },
-  { id: '2', name: 'Marcus', age: 27, gender: 'Male', bio: 'Music producer & dog dad 🎵🐕', interests: ['Music', 'Cooking', 'Fitness'], avatar: '', location: 'Brooklyn', distance: '5 mi' },
-  { id: '3', name: 'Aria', age: 22, gender: 'Female', bio: 'Art student living her best life 🎨', interests: ['Art', 'Reading', 'Hiking'], avatar: '', location: 'Manhattan', distance: '2 mi' },
-  { id: '4', name: 'Jordan', age: 26, gender: 'Non-binary', bio: 'Tech nerd meets plant parent 🌿💻', interests: ['Gaming', 'Plants', 'Coding'], avatar: '', location: 'Queens', distance: '7 mi' },
-  { id: '5', name: 'Luna', age: 25, gender: 'Female', bio: 'Sunset chaser & bookworm 📚', interests: ['Books', 'Beach', 'Dancing'], avatar: '', location: 'Jersey City', distance: '8 mi' },
+  { id: '1', uid: 'TR-A1B2C3', name: 'Sophia', age: 24, gender: 'Female', bio: 'Coffee lover ☕ Adventure seeker 🌍', interests: ['Travel', 'Photography', 'Yoga'], avatar: '', location: 'New York', country: 'USA', city: 'New York', distance: '3 mi' },
+  { id: '2', uid: 'TR-D4E5F6', name: 'Marcus', age: 27, gender: 'Male', bio: 'Music producer & dog dad 🎵🐕', interests: ['Music', 'Cooking', 'Fitness'], avatar: '', location: 'Brooklyn', country: 'USA', city: 'Brooklyn', distance: '5 mi' },
+  { id: '3', uid: 'TR-G7H8I9', name: 'Aria', age: 22, gender: 'Female', bio: 'Art student living her best life 🎨', interests: ['Art', 'Reading', 'Hiking'], avatar: '', location: 'Manhattan', country: 'USA', city: 'Manhattan', distance: '2 mi' },
+  { id: '4', uid: 'TR-J1K2L3', name: 'Jordan', age: 26, gender: 'Non-binary', bio: 'Tech nerd meets plant parent 🌿💻', interests: ['Gaming', 'Plants', 'Coding'], avatar: '', location: 'Queens', country: 'USA', city: 'Queens', distance: '7 mi' },
+  { id: '5', uid: 'TR-M4N5O6', name: 'Luna', age: 25, gender: 'Female', bio: 'Sunset chaser & bookworm 📚', interests: ['Books', 'Beach', 'Dancing'], avatar: '', location: 'Jersey City', country: 'USA', city: 'Jersey City', distance: '8 mi' },
 ];
 
 export const MOCK_CHATS: ChatThread[] = [
