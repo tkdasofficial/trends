@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { UserProfile } from '@/lib/data';
-import { Camera, Sparkles } from 'lucide-react';
+import { Camera, Sparkles, X, Loader2, ImagePlus } from 'lucide-react';
+import { useImageUpload } from '@/hooks/useImageUpload';
 
 const INTEREST_OPTIONS = [
   'Travel', 'Photography', 'Music', 'Cooking', 'Fitness',
@@ -17,6 +18,9 @@ interface ProfileSetupProps {
 
 export function ProfileSetup({ profile, onUpdate, onComplete }: ProfileSetupProps) {
   const [selectedInterests, setSelectedInterests] = useState<string[]>(profile.interests || []);
+  const { images, addImage, removeImage, maxImages } = useImageUpload();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState('');
 
   const toggleInterest = (interest: string) => {
     setSelectedInterests(prev => {
@@ -26,27 +30,72 @@ export function ProfileSetup({ profile, onUpdate, onComplete }: ProfileSetupProp
     });
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError('');
+    const err = await addImage(file);
+    if (err) setUploadError(err);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const isValid = profile.name && profile.name.length > 0 && profile.gender && selectedInterests.length >= 2;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background px-6 py-12">
+    <div className="flex min-h-[100dvh] flex-col bg-background px-6 py-10">
       <motion.div
         className="w-full max-w-sm mx-auto"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <h2 className="mb-1 text-2xl font-bold text-foreground">Set Up Profile</h2>
-        <p className="mb-8 text-muted-foreground">Tell us about yourself</p>
+        <h2 className="mb-1 text-2xl font-bold text-foreground">Getting Ready</h2>
+        <p className="mb-6 text-muted-foreground text-sm">Set up your profile to start connecting</p>
 
-        {/* Avatar */}
-        <div className="mb-8 flex justify-center">
-          <button className="relative flex h-28 w-28 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/80">
-            <Camera className="h-8 w-8 text-muted-foreground" />
-            <span className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full gradient-primary shadow-soft">
-              <span className="text-xs text-primary-foreground font-bold">+</span>
-            </span>
-          </button>
+        {/* Profile Photos - up to 5 */}
+        <label className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <Camera className="h-4 w-4 text-primary" />
+          Photos <span className="text-muted-foreground">({images.length}/{maxImages})</span>
+        </label>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Upload up to 5 clear photos • Max 5MB each • Auto-compressed
+        </p>
+        <div className="mb-5 grid grid-cols-3 gap-2">
+          {images.map(img => (
+            <div key={img.id} className="relative aspect-square rounded-xl overflow-hidden bg-muted">
+              <img src={img.preview} alt="" className="h-full w-full object-cover" />
+              {img.status === 'processing' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                </div>
+              )}
+              <button
+                onClick={() => removeImage(img.id)}
+                className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/80 text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+          {images.length < maxImages && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex aspect-square items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/50 hover:bg-muted transition-colors"
+            >
+              <ImagePlus className="h-6 w-6 text-muted-foreground" />
+            </button>
+          )}
         </div>
+        {uploadError && (
+          <p className="mb-3 text-xs text-destructive">{uploadError}</p>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
 
         {/* Name */}
         <label className="mb-2 block text-sm font-medium text-foreground">Name</label>

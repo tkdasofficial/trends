@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
-import { AgeVerification } from '@/components/AgeVerification';
+import { AuthPage } from '@/components/AuthPage';
 import { ProfileSetup } from '@/components/ProfileSetup';
 import { ProfileCard } from '@/components/ProfileCard';
 import { BottomNav } from '@/components/BottomNav';
@@ -15,15 +15,25 @@ import { NotificationsPage } from '@/components/NotificationsPage';
 import { PrivacySafetyPage } from '@/components/PrivacySafetyPage';
 import { SettingsPage } from '@/components/SettingsPage';
 import { AudioCallPage } from '@/components/AudioCallPage';
-import { useOnboarding, useDiscovery } from '@/hooks/use-app';
+import { TrendsLogo } from '@/components/TrendsLogo';
+import { useDiscovery } from '@/hooks/use-app';
 import { MOCK_CHATS, ChatThread, UserProfile } from '@/lib/data';
-import { Heart, Sparkles } from 'lucide-react';
+import { Sparkles, Heart } from 'lucide-react';
 
+type AppStep = 'welcome' | 'auth' | 'profile-setup' | 'done';
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
 type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
 
 const Index = () => {
-  const { step, setStep, dob, setDob, profile, setProfile, ageError, verifyAge, completeProfile } = useOnboarding();
+  const [step, setStep] = useState<AppStep>('welcome');
+  const [userName, setUserName] = useState('');
+  const [profile, setProfile] = useState<Partial<UserProfile>>({
+    name: '',
+    gender: '',
+    bio: '',
+    interests: [],
+  });
+
   const { currentProfile, like, skip, matches, hasMore } = useDiscovery();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
@@ -34,9 +44,27 @@ const Index = () => {
   const unreadCount = MOCK_CHATS.reduce((sum, c) => sum + c.unread, 0);
 
   // Onboarding flow
-  if (step === 'welcome') return <WelcomeScreen onGetStarted={() => setStep('age')} />;
-  if (step === 'age') return <AgeVerification dob={dob} onDobChange={setDob} onVerify={verifyAge} error={ageError} />;
-  if (step === 'profile') return <ProfileSetup profile={profile} onUpdate={setProfile} onComplete={completeProfile} />;
+  if (step === 'welcome') return <WelcomeScreen onGetStarted={() => setStep('auth')} />;
+  if (step === 'auth') {
+    return (
+      <AuthPage
+        onAuthSuccess={(user) => {
+          setUserName(user.name);
+          setProfile(prev => ({ ...prev, name: user.name }));
+          setStep('profile-setup');
+        }}
+      />
+    );
+  }
+  if (step === 'profile-setup') {
+    return (
+      <ProfileSetup
+        profile={profile}
+        onUpdate={setProfile}
+        onComplete={() => setStep('done')}
+      />
+    );
+  }
 
   // Profile sub-pages
   if (profileSubPage === 'edit') return <EditProfilePage onBack={() => setProfileSubPage(null)} />;
@@ -55,14 +83,13 @@ const Index = () => {
     );
   }
 
-  // Profile view (from search, matches, or chat)
+  // Profile view
   if (viewingProfile) {
     return (
       <ChatProfilePage
         user={viewingProfile}
         onBack={() => setViewingProfile(null)}
         onMessage={() => {
-          // Find existing chat or go back
           const existingChat = MOCK_CHATS.find(c => c.user.id === viewingProfile.id);
           setViewingProfile(null);
           if (existingChat) {
@@ -94,7 +121,7 @@ const Index = () => {
     <div className="flex min-h-[100dvh] flex-col bg-background">
       {/* Top header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
-        <h1 className="text-xl font-extrabold text-gradient sm:text-2xl">Trends</h1>
+        <TrendsLogo size={32} showText textClassName="text-lg" />
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 sm:h-9 sm:w-9">
           <Sparkles className="h-4 w-4 text-primary" />
         </div>
@@ -169,6 +196,7 @@ const Index = () => {
               <ProfilePage
                 onNavigate={setProfileSubPage}
                 onLogout={() => setStep('welcome')}
+                userName={userName || profile.name || 'Your Name'}
               />
             </motion.div>
           )}

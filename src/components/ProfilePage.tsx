@@ -10,9 +10,11 @@ type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
 interface ProfilePageProps {
   onNavigate?: (page: ProfileSubPage) => void;
   onLogout?: () => void;
+  userName?: string;
+  userAvatar?: string;
 }
 
-export function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) {
+export function ProfilePage({ onNavigate, onLogout, userName = 'Your Name', userAvatar }: ProfilePageProps) {
   const [copied, setCopied] = useState(false);
 
   const copyUID = () => {
@@ -30,18 +32,30 @@ export function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) {
 
   return (
     <div className="flex-1 overflow-y-auto pb-24">
-      {/* Header */}
-      <div className="relative gradient-hero px-4 pb-20 pt-10 sm:px-6 sm:pt-12">
+      {/* Header gradient - reduced height */}
+      <div className="relative gradient-hero px-4 pb-14 pt-10 sm:px-6 sm:pt-12">
         <h1 className="text-lg font-bold text-primary-foreground">My Profile</h1>
       </div>
 
-      {/* Avatar card */}
-      <div className="px-4 -mt-14 sm:px-6">
-        <div className="mx-auto max-w-lg rounded-3xl bg-card p-5 shadow-card text-center sm:p-6">
-          <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full gradient-primary text-3xl font-bold text-primary-foreground">
-            U
+      {/* Avatar card - avatar sits half on gradient, half on card */}
+      <div className="px-4 -mt-10 sm:px-6">
+        <div className="mx-auto max-w-lg rounded-3xl bg-card pt-14 pb-5 px-5 shadow-card text-center relative sm:px-6">
+          {/* Avatar positioned to overlap the top edge */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-10">
+            {userAvatar ? (
+              <img
+                src={userAvatar}
+                alt={userName}
+                className="h-20 w-20 rounded-full object-cover border-4 border-card shadow-elevated"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full gradient-primary text-3xl font-bold text-primary-foreground border-4 border-card shadow-elevated">
+                {userName[0]?.toUpperCase() || 'U'}
+              </div>
+            )}
           </div>
-          <h2 className="text-xl font-bold text-foreground">Your Name</h2>
+
+          <h2 className="text-xl font-bold text-foreground">{userName}</h2>
           <p className="text-sm text-muted-foreground">Set up your profile to get started</p>
 
           {/* UID */}
