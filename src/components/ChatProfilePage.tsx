@@ -22,23 +22,35 @@ export function ChatProfilePage({ user, onBack, onMessage, onCall }: ChatProfile
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
-      {/* Header */}
-      <div className="relative gradient-hero px-4 pb-24 pt-12 sm:px-6">
+      {/* Header gradient - reduced height */}
+      <div className="relative gradient-hero px-4 pb-14 pt-12 sm:px-6">
         <button onClick={onBack} className="mb-4 text-primary-foreground/80 hover:text-primary-foreground">
           <ArrowLeft className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Profile card */}
-      <div className="px-4 -mt-16 sm:px-6">
+      {/* Profile card with overlapping avatar */}
+      <div className="px-4 -mt-10 sm:px-6">
         <motion.div
-          className="mx-auto max-w-lg rounded-3xl bg-card p-6 shadow-card text-center"
+          className="mx-auto max-w-lg rounded-3xl bg-card pt-14 pb-6 px-6 shadow-card text-center relative"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full gradient-primary text-4xl font-bold text-primary-foreground">
-            {user.name[0]}
+          {/* Avatar overlapping card top */}
+          <div className="absolute left-1/2 -translate-x-1/2 -top-10">
+            {user.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user.name}
+                className="h-20 w-20 rounded-full object-cover border-4 border-card shadow-elevated"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full gradient-primary text-3xl font-bold text-primary-foreground border-4 border-card shadow-elevated">
+                {user.name[0]}
+              </div>
+            )}
           </div>
+
           <h2 className="text-xl font-bold text-foreground">{user.name}, {user.age}</h2>
           <p className="text-sm text-muted-foreground">{user.gender}</p>
 
