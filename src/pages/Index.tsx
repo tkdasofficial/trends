@@ -1,16 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { AgeVerification } from '@/components/AgeVerification';
 import { ProfileSetup } from '@/components/ProfileSetup';
 import { ProfileCard } from '@/components/ProfileCard';
 import { BottomNav } from '@/components/BottomNav';
-import { ChatList, ChatView } from '@/components/ChatComponents';
+import { ChatList } from '@/components/ChatList';
+import { ChatView } from '@/components/ChatView';
 import { ChatProfilePage } from '@/components/ChatProfilePage';
 import { ProfilePage } from '@/components/ProfilePage';
+import { MatchesSearch } from '@/components/MatchesSearch';
 import { useOnboarding, useDiscovery } from '@/hooks/use-app';
-import { MOCK_CHATS, MOCK_PROFILES, ChatThread } from '@/lib/data';
-import { Heart, Sparkles, Search, X } from 'lucide-react';
+import { MOCK_CHATS, ChatThread } from '@/lib/data';
+import { Heart, Sparkles } from 'lucide-react';
 
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
 
@@ -20,25 +22,8 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
   const [viewingProfile, setViewingProfile] = useState<ChatThread | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const unreadCount = MOCK_CHATS.reduce((sum, c) => sum + c.unread, 0);
-
-  // Search/filter logic for matches
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return null;
-    const q = searchQuery.toLowerCase().trim();
-    return MOCK_PROFILES.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      p.uid.toLowerCase().includes(q) ||
-      p.gender.toLowerCase().includes(q) ||
-      (p.country && p.country.toLowerCase().includes(q)) ||
-      (p.city && p.city.toLowerCase().includes(q)) ||
-      (p.location && p.location.toLowerCase().includes(q)) ||
-      p.age.toString() === q ||
-      p.interests.some(i => i.toLowerCase().includes(q))
-    );
-  }, [searchQuery]);
 
   // Onboarding flow
   if (step === 'welcome') return <WelcomeScreen onGetStarted={() => setStep('age')} />;
@@ -62,7 +47,7 @@ const Index = () => {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-[100dvh] flex-col bg-background">
       {/* Top header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
         <h1 className="text-xl font-extrabold text-gradient sm:text-2xl">Trends</h1>
@@ -104,85 +89,7 @@ const Index = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <h2 className="mb-3 text-lg font-bold text-foreground sm:mb-4">Find People</h2>
-
-              {/* Search bar */}
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by name, UID, gender, city, age, interest..."
-                  className="w-full rounded-xl border border-border bg-card pl-9 pr-9 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Search results */}
-              {searchResults !== null ? (
-                searchResults.length === 0 ? (
-                  <div className="flex flex-col items-center py-12 text-center">
-                    <Search className="mb-2 h-8 w-8 text-muted-foreground" />
-                    <p className="text-muted-foreground text-sm">No users found for "{searchQuery}"</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                    {searchResults.map(m => (
-                      <motion.div
-                        key={m.id}
-                        className="overflow-hidden rounded-2xl bg-card shadow-card"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                      >
-                        <div className="flex h-28 items-center justify-center gradient-primary sm:h-32">
-                          <span className="text-3xl font-bold text-primary-foreground/30 sm:text-4xl">{m.name[0]}</span>
-                        </div>
-                        <div className="p-2.5 sm:p-3">
-                          <p className="font-semibold text-foreground text-xs sm:text-sm">{m.name}, {m.age}</p>
-                          <p className="text-[10px] text-muted-foreground sm:text-xs">{m.city || m.distance}</p>
-                          <p className="mt-0.5 text-[9px] font-mono text-muted-foreground">{m.uid}</p>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )
-              ) : (
-                <>
-                  <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Your Matches</h3>
-                  {matches.length === 0 ? (
-                    <div className="flex flex-col items-center py-12 text-center">
-                      <p className="text-muted-foreground">No matches yet. Keep swiping!</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                      {matches.map(m => (
-                        <motion.div
-                          key={m.id}
-                          className="overflow-hidden rounded-2xl bg-card shadow-card"
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                        >
-                          <div className="flex h-28 items-center justify-center gradient-primary sm:h-32">
-                            <span className="text-3xl font-bold text-primary-foreground/30 sm:text-4xl">{m.name[0]}</span>
-                          </div>
-                          <div className="p-2.5 sm:p-3">
-                            <p className="font-semibold text-foreground text-xs sm:text-sm">{m.name}, {m.age}</p>
-                            <p className="text-[10px] text-muted-foreground sm:text-xs">{m.distance}</p>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+              <MatchesSearch matches={matches} />
             </motion.div>
           )}
 
