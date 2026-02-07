@@ -12,13 +12,14 @@ interface ProfilePageProps {
   onNavigate?: (page: ProfileSubPage) => void;
   onLogout?: () => void;
   userData?: UserData;
+  emailVerified?: boolean;
 }
 
-export function ProfilePage({ onNavigate, onLogout, userData }: ProfilePageProps) {
+export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = false }: ProfilePageProps) {
   const [copied, setCopied] = useState(false);
   const userName = userData?.name || 'Your Name';
   const profileImage = userData?.profileImage;
-  const isVerified = userData?.isVerified || false;
+  const isVerified = (userData?.isVerified || false) && emailVerified;
 
   const copyUID = () => {
     navigator.clipboard.writeText(USER_UID);
