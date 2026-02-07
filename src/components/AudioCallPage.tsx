@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserProfile } from '@/lib/data';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, X } from 'lucide-react';
-
-type CallState = 'incoming' | 'outgoing' | 'connected' | 'ended';
+import { Phone, PhoneOff, Mic, MicOff, Volume2 } from 'lucide-react';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 interface AudioCallPageProps {
   user: UserProfile;
@@ -12,23 +11,29 @@ interface AudioCallPageProps {
 }
 
 export function AudioCallPage({ user, direction, onEnd }: AudioCallPageProps) {
-  const [callState, setCallState] = useState<CallState>(direction);
-  const [duration, setDuration] = useState(0);
-  const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
+  const { callState, startCall, endCall, answerCall, rejectCall, toggleMute, toggleSpeaker } = useWebRTC();
 
   useEffect(() => {
-    if (callState === 'outgoing') {
-      const t = setTimeout(() => setCallState('connected'), 3000);
-      return () => clearTimeout(t);
+    if (direction === 'outgoing' && callState.status === 'idle') {
+      startCall(user.id);
     }
-  }, [callState]);
+  }, [direction, user.id]);
 
-  useEffect(() => {
-    if (callState !== 'connected') return;
-    const interval = setInterval(() => setDuration(d => d + 1), 1000);
-    return () => clearInterval(interval);
-  }, [callState]);
+  const handleEnd = useCallback(() => {
+    endCall();
+    onEnd();
+  }, [endCall, onEnd]);
+
+  const handleAccept = useCallback(() => {
+    answerCall();
+  }, [answerCall]);
+
+  const handleReject = useCallback(() => {
+    rejectCall();
+    onEnd();
+  }, [rejectCall, onEnd]);
+
+  const status = callState.status === 'idle' ? direction : callState.status;
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -36,108 +41,83 @@ export function AudioCallPage({ user, direction, onEnd }: AudioCallPageProps) {
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const endCall = useCallback(() => {
-    setCallState('ended');
-    setTimeout(onEnd, 800);
-  }, [onEnd]);
-
-  const acceptCall = useCallback(() => {
-    setCallState('connected');
-  }, []);
-
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-background">
-      {/* Background gradient */}
       <div className="absolute inset-0 gradient-hero opacity-20" />
 
-      {/* Top section */}
       <div className="relative z-10 flex flex-col items-center pt-16 sm:pt-24">
         <motion.div
-          className="mb-6 flex h-28 w-28 items-center justify-center rounded-full gradient-primary text-5xl font-bold text-primary-foreground shadow-elevated sm:h-32 sm:w-32"
-          animate={callState === 'incoming' || callState === 'outgoing' ? { scale: [1, 1.08, 1] } : {}}
+          className="mb-6 flex h-28 w-28 items-center justify-center rounded-full overflow-hidden gradient-primary text-5xl font-bold text-primary-foreground shadow-elevated sm:h-32 sm:w-32"
+          animate={status === 'incoming' || status === 'outgoing' ? { scale: [1, 1.08, 1] } : {}}
           transition={{ repeat: Infinity, duration: 1.5 }}
         >
-          {user.name[0]}
+          {user.avatar ? (
+            <img src={user.avatar} alt={user.name} className="h-full w-full object-cover" />
+          ) : (
+            user.name[0]
+          )}
         </motion.div>
 
         <h2 className="text-2xl font-bold text-foreground sm:text-3xl">{user.name}</h2>
 
         <AnimatePresence mode="wait">
           <motion.p
-            key={callState}
+            key={status}
             className="mt-2 text-sm text-muted-foreground sm:text-base"
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
           >
-            {callState === 'incoming' && 'Incoming audio call...'}
-            {callState === 'outgoing' && 'Calling...'}
-            {callState === 'connected' && formatDuration(duration)}
-            {callState === 'ended' && 'Call ended'}
+            {status === 'incoming' && 'Incoming audio call...'}
+            {status === 'outgoing' && 'Calling...'}
+            {status === 'connected' && formatDuration(callState.duration)}
+            {status === 'ended' && 'Call ended'}
           </motion.p>
         </AnimatePresence>
       </div>
 
-      {/* Controls */}
       <div className="relative z-10 pb-16 sm:pb-20">
-        {callState === 'incoming' ? (
+        {status === 'incoming' ? (
           <div className="flex items-center gap-8">
-            {/* Reject */}
-            <motion.button
-              onClick={endCall}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-elevated sm:h-18 sm:w-18"
-              whileTap={{ scale: 0.9 }}
-            >
+            <motion.button onClick={handleReject}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-elevated"
+              whileTap={{ scale: 0.9 }}>
               <PhoneOff className="h-7 w-7" />
             </motion.button>
-
-            {/* Accept */}
-            <motion.button
-              onClick={acceptCall}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-primary-foreground shadow-elevated sm:h-18 sm:w-18"
+            <motion.button onClick={handleAccept}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500 text-primary-foreground shadow-elevated"
               whileTap={{ scale: 0.9 }}
               animate={{ scale: [1, 1.1, 1] }}
-              transition={{ repeat: Infinity, duration: 1.2 }}
-            >
+              transition={{ repeat: Infinity, duration: 1.2 }}>
               <Phone className="h-7 w-7" />
             </motion.button>
           </div>
-        ) : callState === 'connected' ? (
+        ) : status === 'connected' ? (
           <div className="flex items-center gap-6">
-            <motion.button
-              onClick={() => setMuted(!muted)}
+            <motion.button onClick={toggleMute}
               className={`flex h-14 w-14 items-center justify-center rounded-full transition-colors ${
-                muted ? 'bg-destructive/20 text-destructive' : 'bg-muted text-foreground'
+                callState.muted ? 'bg-destructive/20 text-destructive' : 'bg-muted text-foreground'
               }`}
-              whileTap={{ scale: 0.9 }}
-            >
-              {muted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+              whileTap={{ scale: 0.9 }}>
+              {callState.muted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
             </motion.button>
-
-            <motion.button
-              onClick={endCall}
+            <motion.button onClick={handleEnd}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-elevated"
-              whileTap={{ scale: 0.9 }}
-            >
+              whileTap={{ scale: 0.9 }}>
               <PhoneOff className="h-7 w-7" />
             </motion.button>
-
-            <motion.button
-              onClick={() => setSpeaker(!speaker)}
+            <motion.button onClick={toggleSpeaker}
               className={`flex h-14 w-14 items-center justify-center rounded-full transition-colors ${
-                speaker ? 'bg-primary/20 text-primary' : 'bg-muted text-foreground'
+                callState.speaker ? 'bg-primary/20 text-primary' : 'bg-muted text-foreground'
               }`}
-              whileTap={{ scale: 0.9 }}
-            >
+              whileTap={{ scale: 0.9 }}>
               <Volume2 className="h-6 w-6" />
             </motion.button>
           </div>
-        ) : callState === 'outgoing' ? (
-          <motion.button
-            onClick={endCall}
+        ) : status !== 'ended' ? (
+          <motion.button onClick={handleEnd}
             className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-elevated"
-            whileTap={{ scale: 0.9 }}
-          >
+            whileTap={{ scale: 0.9 }}>
             <PhoneOff className="h-7 w-7" />
           </motion.button>
         ) : null}

@@ -21,6 +21,7 @@ import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
 import { useUserStore } from '@/hooks/useUserStore';
 import { useAuth } from '@/hooks/useAuth';
+import { useFirebaseChat } from '@/hooks/useFirebaseChat';
 import { ChatThread, UserProfile } from '@/lib/data';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -36,17 +37,17 @@ const Index = () => {
   const [showWelcome, setShowWelcome] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
 
-  const { currentProfile, like, skip, matches, hasMore } = useDiscovery();
+  const { currentProfile, like, skip, matches, hasMore, loading: discoverLoading, refresh: refreshDiscover } = useDiscovery(user.genderPreference);
+  const { chats, startChat } = useFirebaseChat();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
   const [profileSubPage, setProfileSubPage] = useState<SubPage>(null);
   const [callingUser, setCallingUser] = useState<UserProfile | null>(null);
-  const [chats] = useState<ChatThread[]>([]);
 
   const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
 
-  // Pre-fill user data from Firebase Auth when authenticated
+  // Pre-fill user data from Firebase Auth
   useEffect(() => {
     if (firebaseUser && !user.email) {
       updateUser({
@@ -56,7 +57,6 @@ const Index = () => {
     }
   }, [firebaseUser]);
 
-  // Show loading spinner while auth state is resolving
   if (authLoading) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-background">
@@ -68,29 +68,22 @@ const Index = () => {
     );
   }
 
-  // Not logged in: show Welcome or Auth
+  // Not logged in
   if (!firebaseUser) {
     if (showAuth) {
       return (
         <AuthPage
           onAuthSuccess={(authUser) => {
-            updateUser({
-              name: authUser.name,
-              email: authUser.email,
-              phone: authUser.phone || '',
-              dob: authUser.dob || '',
-            });
+            updateUser({ name: authUser.name, email: authUser.email, phone: authUser.phone || '', dob: authUser.dob || '' });
           }}
-          isSignup={(isNew) => {
-            // isNew is true for signups — they need profile setup
-          }}
+          isSignup={() => {}}
         />
       );
     }
     return <WelcomeScreen onGetStarted={() => setShowAuth(true)} />;
   }
 
-  // Logged in but new user: show profile setup
+  // New user → profile setup
   if (isNewUser && !profileComplete) {
     return (
       <ProfileSetup
@@ -108,12 +101,12 @@ const Index = () => {
             interests: p.interests || [],
           });
         }}
+        onGenderPreference={(pref) => {
+          updateUser({ genderPreference: pref });
+        }}
         onComplete={async () => {
-          // Mark profile as complete in Firestore
           try {
-            await setDoc(doc(db, 'users', firebaseUser.uid), {
-              profileComplete: true,
-            }, { merge: true });
+            await setDoc(doc(db, 'users', firebaseUser.uid), { profileComplete: true }, { merge: true });
             localStorage.setItem(`trends_profile_complete_${firebaseUser.uid}`, 'true');
           } catch (err) {
             console.error('Failed to mark profile complete:', err);
@@ -126,14 +119,11 @@ const Index = () => {
     );
   }
 
-  // Profile sub-pages
+  // Sub-pages
   if (profileSubPage === 'edit') {
     return (
-      <EditProfilePage
-        onBack={() => setProfileSubPage(null)}
-        userData={user}
-        onSave={(data) => updateUser(data)}
-      />
+      <EditProfilePage onBack={() => setProfileSubPage(null)} userData={user}
+        onSave={(data) => { updateUser(data); refreshDiscover(); }} />
     );
   }
   if (profileSubPage === 'notifications') return <NotificationsPage onBack={() => setProfileSubPage(null)} />;
@@ -144,14 +134,10 @@ const Index = () => {
     return <AdminPanel onBack={() => setProfileSubPage(null)} adminEmail={user.email} />;
   }
 
-  // Audio call page
+  // Audio call
   if (callingUser) {
     return (
-      <AudioCallPage
-        user={callingUser}
-        direction="outgoing"
-        onEnd={() => setCallingUser(null)}
-      />
+      <AudioCallPage user={callingUser} direction="outgoing" onEnd={() => setCallingUser(null)} />
     );
   }
 
@@ -161,13 +147,25 @@ const Index = () => {
       <ChatProfilePage
         user={viewingProfile}
         onBack={() => setViewingProfile(null)}
-        onMessage={() => {
-          setViewingProfile(null);
-          setActiveTab('chat');
+        onMessage={async () => {
+          const chatId = await startChat(viewingProfile.id);
+          if (chatId) {
+            // Find or create the chat thread
+            const thread: ChatThread = {
+              id: chatId,
+              user: viewingProfile,
+              lastMessage: '',
+              lastMessageTime: new Date(),
+              unread: 0,
+            };
+            setActiveChat(thread);
+            setViewingProfile(null);
+            setActiveTab('chat');
+          }
         }}
         onCall={() => {
-          setViewingProfile(null);
           setCallingUser(viewingProfile);
+          setViewingProfile(null);
         }}
       />
     );
@@ -180,6 +178,10 @@ const Index = () => {
         chat={activeChat}
         onBack={() => setActiveChat(null)}
         onViewProfile={() => setViewingProfile(activeChat.user)}
+        onCall={() => {
+          setCallingUser(activeChat.user);
+          setActiveChat(null);
+        }}
       />
     );
   }
@@ -192,9 +194,7 @@ const Index = () => {
           <MailWarning className="h-4 w-4 shrink-0 text-amber-600" />
           <span className="flex-1 text-amber-700 dark:text-amber-400">Verify your email to unlock the verification badge.</span>
           <button onClick={async () => {
-            if (firebaseUser) {
-              try { await sendEmailVerification(firebaseUser); } catch {}
-            }
+            if (firebaseUser) { try { await sendEmailVerification(firebaseUser); } catch {} }
           }} className="text-xs font-semibold text-amber-600 hover:underline whitespace-nowrap">Resend</button>
           <button onClick={refreshEmailVerification} className="text-amber-600 hover:text-amber-700">
             <RefreshCw className="h-3.5 w-3.5" />
@@ -202,23 +202,18 @@ const Index = () => {
         </div>
       )}
 
-      {/* Top header */}
+      {/* Header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
         <TrendsLogo size={32} showText textClassName="text-lg" />
         <div className="flex items-center gap-2">
           {isAdmin(user.email) && (
-            <button
-              onClick={() => setProfileSubPage('admin')}
-              className="flex items-center gap-1 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive transition-all hover:bg-destructive/20 active:scale-95"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Admin
+            <button onClick={() => setProfileSubPage('admin')}
+              className="flex items-center gap-1 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive transition-all hover:bg-destructive/20 active:scale-95">
+              <ShieldCheck className="h-3.5 w-3.5" /> Admin
             </button>
           )}
-          <button
-            onClick={() => setProfileSubPage('upgrade')}
-            className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95"
-          >
+          <button onClick={() => setProfileSubPage('upgrade')}
+            className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95">
             Upgrade
           </button>
         </div>
@@ -228,20 +223,14 @@ const Index = () => {
       <main className="flex-1 overflow-y-auto pb-20 sm:pb-24">
         <AnimatePresence mode="wait">
           {activeTab === 'discover' && (
-            <motion.div
-              key="discover"
-              className="px-4 sm:px-6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              {hasMore && currentProfile ? (
-                <ProfileCard
-                  profile={currentProfile}
-                  onLike={like}
-                  onSkip={skip}
-                  onTap={() => setViewingProfile(currentProfile)}
-                />
+            <motion.div key="discover" className="px-4 sm:px-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {discoverLoading ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="mt-2 text-sm text-muted-foreground">Finding people...</p>
+                </div>
+              ) : hasMore && currentProfile ? (
+                <ProfileCard profile={currentProfile} onLike={like} onSkip={skip} onTap={() => setViewingProfile(currentProfile)} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -249,58 +238,35 @@ const Index = () => {
                   </div>
                   <p className="text-lg font-semibold text-foreground">No profiles available</p>
                   <p className="text-sm text-muted-foreground mt-1">New users will appear here as they join</p>
+                  <button onClick={refreshDiscover}
+                    className="mt-4 rounded-xl bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 transition-colors">
+                    Refresh
+                  </button>
                 </div>
               )}
             </motion.div>
           )}
 
           {activeTab === 'matches' && (
-            <motion.div
-              key="matches"
-              className="px-4 sm:px-6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <MatchesSearch
-                matches={matches}
-                onViewProfile={(p) => setViewingProfile(p)}
-              />
+            <motion.div key="matches" className="px-4 sm:px-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <MatchesSearch matches={matches} onViewProfile={(p) => setViewingProfile(p)} />
             </motion.div>
           )}
 
           {activeTab === 'chat' && (
-            <motion.div
-              key="chat"
-              className="flex flex-col"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
+            <motion.div key="chat" className="flex flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="px-4 pb-2 sm:px-6">
                 <h2 className="text-lg font-bold text-foreground">Messages</h2>
               </div>
-              <ChatList
-                chats={chats}
-                onSelect={setActiveChat}
-                onViewProfile={(chat) => setViewingProfile(chat.user)}
-              />
+              <ChatList chats={chats} onSelect={setActiveChat} onViewProfile={(chat) => setViewingProfile(chat.user)} />
             </motion.div>
           )}
 
           {activeTab === 'profile' && (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
+            <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <ProfilePage
                 onNavigate={setProfileSubPage}
-                onLogout={async () => {
-                  await logout();
-                  clearUser();
-                }}
+                onLogout={async () => { await logout(); clearUser(); }}
                 userData={user}
                 emailVerified={emailVerified}
               />

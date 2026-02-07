@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Camera, Save, X, Loader2, ImagePlus, BadgeCheck } from 'lucide-react';
-import { useImageUpload } from '@/hooks/useImageUpload';
+import { ArrowLeft, Camera, Save, X, ImagePlus, BadgeCheck, Search } from 'lucide-react';
 import { UserData } from '@/hooks/useUserStore';
 
 const INTEREST_OPTIONS = [
@@ -9,6 +8,8 @@ const INTEREST_OPTIONS = [
   'Art', 'Reading', 'Gaming', 'Hiking', 'Dancing',
   'Movies', 'Yoga', 'Beach', 'Coffee', 'Fashion',
 ];
+
+const GENDER_PREF_OPTIONS = ['All', 'Male', 'Female', 'Other'];
 
 interface EditProfilePageProps {
   onBack: () => void;
@@ -20,6 +21,7 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
   const [name, setName] = useState(userData.name);
   const [bio, setBio] = useState(userData.bio);
   const [gender, setGender] = useState(userData.gender);
+  const [genderPreference, setGenderPreference] = useState(userData.genderPreference || 'All');
   const [city, setCity] = useState(userData.city);
   const [country, setCountry] = useState(userData.country);
   const [interests, setInterests] = useState<string[]>(userData.interests);
@@ -30,7 +32,6 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
 
   const profileInputRef = useRef<HTMLInputElement>(null);
   const verifyInputRef = useRef<HTMLInputElement>(null);
-  const { addImage } = useImageUpload();
 
   const toggleInterest = (i: string) => {
     setInterests(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
@@ -39,10 +40,9 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
   const handleProfilePicture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith('image/')) { setUploadError('Please select an image file'); return; }
+    if (file.size > 5 * 1024 * 1024) { setUploadError('Image must be under 5MB'); return; }
     setUploadError('');
-    const err = await addImage(file);
-    if (err) { setUploadError(err); return; }
-    // Compress and set as profile image
     const compressed = await compressToDataUrl(file);
     setProfileImage(compressed);
     if (profileInputRef.current) profileInputRef.current.value = '';
@@ -52,6 +52,8 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
     const file = e.target.files?.[0];
     if (!file) return;
     if (verificationImages.length >= 5) { setUploadError('Maximum 5 verification images'); return; }
+    if (!file.type.startsWith('image/')) { setUploadError('Please select an image file'); return; }
+    if (file.size > 5 * 1024 * 1024) { setUploadError('Image must be under 5MB'); return; }
     setUploadError('');
     const compressed = await compressToDataUrl(file);
     setVerificationImages(prev => [...prev, compressed]);
@@ -64,9 +66,8 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
 
   const handleSave = () => {
     onSave({
-      name, bio, gender, city, country, interests,
-      profileImage,
-      verificationImages,
+      name, bio, gender, genderPreference, city, country, interests,
+      profileImage, verificationImages,
       isVerified: verificationImages.length >= 5,
     });
     setSaved(true);
@@ -122,6 +123,22 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
             </div>
           </div>
 
+          {/* Gender Preference */}
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <Search className="h-4 w-4 text-primary" />
+              Looking for
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {GENDER_PREF_OPTIONS.map(g => (
+                <button key={g} onClick={() => setGenderPreference(g)}
+                  className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-all ${genderPreference === g ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Bio */}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-foreground">Bio</label>
@@ -163,7 +180,7 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
               <BadgeCheck className="h-4 w-4 text-green-500" />
               Verification Photos <span className="text-muted-foreground">({verificationImages.length}/5)</span>
             </label>
-            <p className="mb-3 text-xs text-muted-foreground">Upload 5 clear face photos to get verified • No sunglasses • One person per photo</p>
+            <p className="mb-3 text-xs text-muted-foreground">Upload 5 clear face photos to get verified</p>
             <div className="grid grid-cols-5 gap-2">
               {verificationImages.map((img, idx) => (
                 <div key={idx} className="relative aspect-square rounded-xl overflow-hidden bg-muted">
@@ -183,7 +200,7 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
             </div>
             {verificationImages.length >= 5 && (
               <p className="mt-2 text-xs text-green-500 font-medium flex items-center gap-1">
-                <BadgeCheck className="h-3.5 w-3.5" /> Profile verified!
+                <BadgeCheck className="h-3.5 w-3.5" /> Photos uploaded! Verify email for badge.
               </p>
             )}
           </div>
@@ -191,7 +208,6 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
 
           {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
 
-          {/* Save */}
           <motion.button onClick={handleSave}
             className="w-full flex items-center justify-center gap-2 rounded-2xl gradient-primary px-6 py-3.5 text-sm font-bold text-primary-foreground shadow-soft"
             whileTap={{ scale: 0.97 }}>
@@ -203,7 +219,6 @@ export function EditProfilePage({ onBack, userData, onSave }: EditProfilePagePro
   );
 }
 
-// Inline compress function
 async function compressToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
