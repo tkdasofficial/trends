@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WelcomeScreen } from '@/components/WelcomeScreen';
 import { AuthPage } from '@/components/AuthPage';
@@ -20,22 +20,20 @@ import { AdminPanel, isAdmin } from '@/components/AdminPanel';
 import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
 import { useUserStore } from '@/hooks/useUserStore';
+import { useAuth } from '@/hooks/useAuth';
 import { ChatThread, UserProfile } from '@/lib/data';
-import { Heart, ShieldCheck } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Heart, ShieldCheck, Loader2 } from 'lucide-react';
 
-type AppStep = 'welcome' | 'auth' | 'profile-setup' | 'done';
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
 type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
 
 const Index = () => {
-  const [step, setStep] = useState<AppStep>('welcome');
-  const { user, updateUser, clearUser } = useUserStore();
-  const [profile, setProfile] = useState<Partial<UserProfile>>({
-    name: '',
-    gender: '',
-    bio: '',
-    interests: [],
-  });
+  const { firebaseUser, loading: authLoading, isNewUser, profileComplete, logout, markProfileComplete } = useAuth();
+  const { user, updateUser, clearUser, loaded: userLoaded } = useUserStore();
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
 
   const { currentProfile, like, skip, matches, hasMore } = useDiscovery();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
@@ -47,30 +45,61 @@ const Index = () => {
 
   const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
 
-  // Onboarding flow
-  if (step === 'welcome') return <WelcomeScreen onGetStarted={() => setStep('auth')} />;
-  if (step === 'auth') {
+  // Pre-fill user data from Firebase Auth when authenticated
+  useEffect(() => {
+    if (firebaseUser && !user.email) {
+      updateUser({
+        name: firebaseUser.displayName || '',
+        email: firebaseUser.email || '',
+      });
+    }
+  }, [firebaseUser]);
+
+  // Show loading spinner while auth state is resolving
+  if (authLoading) {
     return (
-      <AuthPage
-        onAuthSuccess={(authUser) => {
-          updateUser({
-            name: authUser.name,
-            email: authUser.email,
-            phone: authUser.phone || '',
-            dob: authUser.dob || '',
-          });
-          setProfile(prev => ({ ...prev, name: authUser.name }));
-          setStep('profile-setup');
-        }}
-      />
+      <div className="flex min-h-[100dvh] items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
     );
   }
-  if (step === 'profile-setup') {
+
+  // Not logged in: show Welcome or Auth
+  if (!firebaseUser) {
+    if (showAuth) {
+      return (
+        <AuthPage
+          onAuthSuccess={(authUser) => {
+            updateUser({
+              name: authUser.name,
+              email: authUser.email,
+              phone: authUser.phone || '',
+              dob: authUser.dob || '',
+            });
+          }}
+          isSignup={(isNew) => {
+            // isNew is true for signups — they need profile setup
+          }}
+        />
+      );
+    }
+    return <WelcomeScreen onGetStarted={() => setShowAuth(true)} />;
+  }
+
+  // Logged in but new user: show profile setup
+  if (isNewUser && !profileComplete) {
     return (
       <ProfileSetup
-        profile={profile}
+        profile={{
+          name: user.name || firebaseUser.displayName || '',
+          gender: user.gender,
+          bio: user.bio,
+          interests: user.interests,
+        }}
         onUpdate={(p) => {
-          setProfile(p);
           updateUser({
             name: p.name || user.name,
             gender: p.gender || '',
@@ -78,7 +107,20 @@ const Index = () => {
             interests: p.interests || [],
           });
         }}
-        onComplete={() => setStep('done')}
+        onComplete={async () => {
+          // Mark profile as complete in Firestore
+          try {
+            await setDoc(doc(db, 'users', firebaseUser.uid), {
+              profileComplete: true,
+            }, { merge: true });
+            localStorage.setItem(`trends_profile_complete_${firebaseUser.uid}`, 'true');
+          } catch (err) {
+            console.error('Failed to mark profile complete:', err);
+            localStorage.setItem(`trends_profile_complete_${firebaseUser.uid}`, 'true');
+          }
+          updateUser({ profileComplete: true });
+          markProfileComplete();
+        }}
       />
     );
   }
@@ -238,9 +280,9 @@ const Index = () => {
             >
               <ProfilePage
                 onNavigate={setProfileSubPage}
-                onLogout={() => {
+                onLogout={async () => {
+                  await logout();
                   clearUser();
-                  setStep('welcome');
                 }}
                 userData={user}
               />
