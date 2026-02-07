@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Search, X, SlidersHorizontal, MapPin } from 'lucide-react';
-import { UserProfile, MOCK_PROFILES } from '@/lib/data';
+import { UserProfile } from '@/lib/data';
 
 interface MatchesSearchProps {
   matches: UserProfile[];
@@ -17,10 +17,8 @@ export function MatchesSearch({ matches, onViewProfile }: MatchesSearchProps) {
   const [filterMinAge, setFilterMinAge] = useState('');
   const [filterMaxAge, setFilterMaxAge] = useState('');
 
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim() && filterGender === 'All' && !filterMinAge && !filterMaxAge) return null;
-
-    let pool = MOCK_PROFILES;
+  const filteredMatches = useMemo(() => {
+    let pool = matches;
 
     if (filterGender !== 'All') {
       pool = pool.filter(p => p.gender.toLowerCase() === filterGender.toLowerCase());
@@ -40,14 +38,13 @@ export function MatchesSearch({ matches, onViewProfile }: MatchesSearchProps) {
         p.gender.toLowerCase().includes(q) ||
         (p.country && p.country.toLowerCase().includes(q)) ||
         (p.city && p.city.toLowerCase().includes(q)) ||
-        (p.location && p.location.toLowerCase().includes(q)) ||
         p.age.toString() === q ||
         p.interests.some(i => i.toLowerCase().includes(q))
       );
     }
 
     return pool;
-  }, [searchQuery, filterGender, filterMinAge, filterMaxAge]);
+  }, [matches, searchQuery, filterGender, filterMinAge, filterMaxAge]);
 
   const clearAll = () => {
     setSearchQuery('');
@@ -143,38 +140,20 @@ export function MatchesSearch({ matches, onViewProfile }: MatchesSearchProps) {
       )}
 
       {/* Results */}
-      {searchResults !== null ? (
-        searchResults.length === 0 ? (
-          <div className="flex flex-col items-center py-12 text-center">
-            <Search className="mb-2 h-8 w-8 text-muted-foreground" />
-            <p className="text-muted-foreground text-sm">No users found</p>
-            <p className="text-muted-foreground text-xs mt-1">Try a different search or adjust filters</p>
-          </div>
-        ) : (
-          <div>
-            <p className="text-xs text-muted-foreground mb-3">{searchResults.length} result{searchResults.length !== 1 ? 's' : ''} found</p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {searchResults.map(m => (
-                <ProfileGridCard key={m.id} profile={m} onClick={() => onViewProfile?.(m)} />
-              ))}
-            </div>
-          </div>
-        )
+      <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Your Matches</h3>
+      {filteredMatches.length === 0 ? (
+        <div className="flex flex-col items-center py-12 text-center">
+          <Search className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-muted-foreground text-sm">
+            {matches.length === 0 ? 'No matches yet. Keep swiping!' : 'No results found'}
+          </p>
+        </div>
       ) : (
-        <>
-          <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Your Matches</h3>
-          {matches.length === 0 ? (
-            <div className="flex flex-col items-center py-12 text-center">
-              <p className="text-muted-foreground">No matches yet. Keep swiping!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {matches.map(m => (
-                <ProfileGridCard key={m.id} profile={m} onClick={() => onViewProfile?.(m)} />
-              ))}
-            </div>
-          )}
-        </>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {filteredMatches.map(m => (
+            <ProfileGridCard key={m.id} profile={m} onClick={() => onViewProfile?.(m)} />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -190,15 +169,18 @@ function ProfileGridCard({ profile, onClick }: { profile: UserProfile; onClick?:
       whileTap={{ scale: 0.97 }}
     >
       <div className="flex h-28 items-center justify-center gradient-primary sm:h-32">
-        <span className="text-3xl font-bold text-primary-foreground/30 sm:text-4xl">{profile.name[0]}</span>
+        {profile.avatar ? (
+          <img src={profile.avatar} alt={profile.name} className="h-full w-full object-cover" />
+        ) : (
+          <span className="text-3xl font-bold text-primary-foreground/30 sm:text-4xl">{profile.name[0]}</span>
+        )}
       </div>
       <div className="p-2.5 sm:p-3">
         <p className="font-semibold text-foreground text-xs sm:text-sm">{profile.name}, {profile.age}</p>
         <p className="text-[10px] text-muted-foreground sm:text-xs flex items-center gap-0.5">
           <MapPin className="h-2.5 w-2.5" />
-          {profile.city || profile.distance}
+          {profile.city || profile.distance || 'Nearby'}
         </p>
-        <p className="mt-0.5 text-[9px] font-mono text-muted-foreground">{profile.uid}</p>
       </div>
     </motion.button>
   );

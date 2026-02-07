@@ -16,15 +16,16 @@ import { PrivacySafetyPage } from '@/components/PrivacySafetyPage';
 import { SettingsPage } from '@/components/SettingsPage';
 import { AudioCallPage } from '@/components/AudioCallPage';
 import { UpgradePage } from '@/components/UpgradePage';
+import { AdminPanel, isAdmin } from '@/components/AdminPanel';
 import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
 import { useUserStore } from '@/hooks/useUserStore';
-import { MOCK_CHATS, ChatThread, UserProfile } from '@/lib/data';
-import { Heart } from 'lucide-react';
+import { ChatThread, UserProfile } from '@/lib/data';
+import { Heart, ShieldCheck } from 'lucide-react';
 
 type AppStep = 'welcome' | 'auth' | 'profile-setup' | 'done';
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
-type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade';
+type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
 
 const Index = () => {
   const [step, setStep] = useState<AppStep>('welcome');
@@ -42,8 +43,9 @@ const Index = () => {
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
   const [profileSubPage, setProfileSubPage] = useState<SubPage>(null);
   const [callingUser, setCallingUser] = useState<UserProfile | null>(null);
+  const [chats] = useState<ChatThread[]>([]);
 
-  const unreadCount = MOCK_CHATS.reduce((sum, c) => sum + c.unread, 0);
+  const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
 
   // Onboarding flow
   if (step === 'welcome') return <WelcomeScreen onGetStarted={() => setStep('auth')} />;
@@ -51,7 +53,12 @@ const Index = () => {
     return (
       <AuthPage
         onAuthSuccess={(authUser) => {
-          updateUser({ name: authUser.name, email: authUser.email });
+          updateUser({
+            name: authUser.name,
+            email: authUser.email,
+            phone: authUser.phone || '',
+            dob: authUser.dob || '',
+          });
           setProfile(prev => ({ ...prev, name: authUser.name }));
           setStep('profile-setup');
         }}
@@ -90,6 +97,9 @@ const Index = () => {
   if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'settings') return <SettingsPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'upgrade') return <UpgradePage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'admin') {
+    return <AdminPanel onBack={() => setProfileSubPage(null)} adminEmail={user.email} />;
+  }
 
   // Audio call page
   if (callingUser) {
@@ -109,13 +119,8 @@ const Index = () => {
         user={viewingProfile}
         onBack={() => setViewingProfile(null)}
         onMessage={() => {
-          const existingChat = MOCK_CHATS.find(c => c.user.id === viewingProfile.id);
           setViewingProfile(null);
-          if (existingChat) {
-            setActiveChat(existingChat);
-          } else {
-            setActiveTab('chat');
-          }
+          setActiveTab('chat');
         }}
         onCall={() => {
           setViewingProfile(null);
@@ -141,12 +146,23 @@ const Index = () => {
       {/* Top header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
         <TrendsLogo size={32} showText textClassName="text-lg" />
-        <button
-          onClick={() => setProfileSubPage('upgrade')}
-          className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95"
-        >
-          Upgrade
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin(user.email) && (
+            <button
+              onClick={() => setProfileSubPage('admin')}
+              className="flex items-center gap-1 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive transition-all hover:bg-destructive/20 active:scale-95"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Admin
+            </button>
+          )}
+          <button
+            onClick={() => setProfileSubPage('upgrade')}
+            className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95"
+          >
+            Upgrade
+          </button>
+        </div>
       </header>
 
       {/* Tab content */}
@@ -172,8 +188,8 @@ const Index = () => {
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                     <Heart className="h-8 w-8 text-primary" />
                   </div>
-                  <p className="text-lg font-semibold text-foreground">No more profiles</p>
-                  <p className="text-sm text-muted-foreground">Check back later for new people!</p>
+                  <p className="text-lg font-semibold text-foreground">No profiles available</p>
+                  <p className="text-sm text-muted-foreground mt-1">New users will appear here as they join</p>
                 </div>
               )}
             </motion.div>
@@ -206,7 +222,7 @@ const Index = () => {
                 <h2 className="text-lg font-bold text-foreground">Messages</h2>
               </div>
               <ChatList
-                chats={MOCK_CHATS}
+                chats={chats}
                 onSelect={setActiveChat}
                 onViewProfile={(chat) => setViewingProfile(chat.user)}
               />

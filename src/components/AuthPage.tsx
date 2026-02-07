@@ -13,7 +13,7 @@ import { Eye, EyeOff, Mail, Lock, User, Phone, Calendar, AlertTriangle, Loader2 
 type AuthMode = 'login' | 'signup';
 
 interface AuthPageProps {
-  onAuthSuccess: (user: { name: string; email: string }) => void;
+  onAuthSuccess: (user: { name: string; email: string; phone?: string; dob?: string }) => void;
 }
 
 export function AuthPage({ onAuthSuccess }: AuthPageProps) {
@@ -21,6 +21,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Login fields
   const [email, setEmail] = useState('');
@@ -57,6 +58,11 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
           setLoading(false);
           return;
         }
+        if (!agreedToTerms) {
+          setError('Please accept the Terms & Conditions');
+          setLoading(false);
+          return;
+        }
         // Check age
         const birth = new Date(dob);
         const today = new Date();
@@ -71,7 +77,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
 
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(cred.user, { displayName: fullName.trim() });
-        onAuthSuccess({ name: fullName.trim(), email: email.trim() });
+        onAuthSuccess({ name: fullName.trim(), email: email.trim(), phone: phone.trim(), dob });
       } else {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
         onAuthSuccess({ name: cred.user.displayName || 'User', email: cred.user.email || '' });
@@ -127,11 +133,11 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
           <div className="mb-8">
             <TrendsLogo size={48} className="mb-6" />
             <h1 className="text-3xl font-extrabold text-foreground">
-              {mode === 'login' ? 'Log in' : 'Create your account'}
+              {mode === 'login' ? 'Welcome back' : 'Create your account'}
             </h1>
-            {mode === 'signup' && (
-              <p className="mt-1 text-sm text-muted-foreground">Join Trends and start connecting</p>
-            )}
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === 'login' ? 'Log in to continue' : 'Join Trends and start connecting'}
+            </p>
           </div>
 
           {/* Social buttons */}
@@ -240,6 +246,24 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
             </div>
           </div>
 
+          {/* Terms checkbox */}
+          {mode === 'signup' && (
+            <label className="mt-4 flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={e => { setAgreedToTerms(e.target.checked); clearError(); }}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary accent-primary focus:ring-primary"
+              />
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                I agree to the{' '}
+                <span className="underline text-foreground cursor-pointer font-medium">Terms & Conditions</span> and{' '}
+                <span className="underline text-foreground cursor-pointer font-medium">Privacy Policy</span>.
+                You must be 18+ to use Trends.
+              </span>
+            </label>
+          )}
+
           {/* Error */}
           {error && (
             <motion.div
@@ -250,15 +274,6 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {error}
             </motion.div>
-          )}
-
-          {/* Terms */}
-          {mode === 'signup' && (
-            <p className="mt-4 text-xs text-muted-foreground text-center">
-              By continuing, you agree to our{' '}
-              <span className="underline cursor-pointer">Terms of Service</span> and{' '}
-              <span className="underline cursor-pointer">Privacy Policy</span>.
-            </p>
           )}
 
           {/* Submit */}
@@ -282,7 +297,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
             {mode === 'login' ? (
               <>
                 Don't have an account?{' '}
-                <button onClick={() => { setMode('signup'); clearError(); }} className="font-semibold text-primary hover:underline">
+                <button onClick={() => { setMode('signup'); clearError(); setAgreedToTerms(false); }} className="font-semibold text-primary hover:underline">
                   Create your account
                 </button>
               </>
