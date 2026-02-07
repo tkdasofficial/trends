@@ -1,10 +1,7 @@
 import { motion } from 'framer-motion';
 import { Settings, Shield, Bell, Edit3, LogOut, ChevronRight, Copy, Check, BadgeCheck } from 'lucide-react';
 import { useState } from 'react';
-import { generateUID } from '@/lib/data';
 import { UserData } from '@/hooks/useUserStore';
-
-const USER_UID = generateUID();
 
 type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
 
@@ -19,10 +16,11 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
   const [copied, setCopied] = useState(false);
   const userName = userData?.name || 'Your Name';
   const profileImage = userData?.profileImage;
+  const userUID = userData?.uid || 'TR-000000';
   const isVerified = (userData?.isVerified || false) && emailVerified;
 
   const copyUID = () => {
-    navigator.clipboard.writeText(USER_UID);
+    navigator.clipboard.writeText(userUID);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -45,11 +43,8 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
           <div className="absolute left-1/2 -translate-x-1/2 -top-12">
             <div className="relative">
               {profileImage ? (
-                <img
-                  src={profileImage}
-                  alt={userName}
-                  className="h-24 w-24 rounded-full object-cover border-4 border-card shadow-elevated"
-                />
+                <img src={profileImage} alt={userName}
+                  className="h-24 w-24 rounded-full object-cover border-4 border-card shadow-elevated" />
               ) : (
                 <div className="flex h-24 w-24 items-center justify-center rounded-full gradient-primary text-3xl font-bold text-primary-foreground border-4 border-card shadow-elevated">
                   {userName[0]?.toUpperCase() || 'U'}
@@ -67,28 +62,26 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
             <h2 className="text-xl font-bold text-foreground">{userName}</h2>
             {isVerified && <BadgeCheck className="h-5 w-5 text-green-500" />}
           </div>
-          <p className="text-sm text-muted-foreground">
-            {userData?.bio || 'Set up your profile to get started'}
-          </p>
+          <p className="text-sm text-muted-foreground">{userData?.bio || 'Set up your profile to get started'}</p>
           {userData?.city && userData?.country && (
             <p className="text-xs text-muted-foreground mt-0.5">{userData.city}, {userData.country}</p>
           )}
 
-          <button
-            onClick={copyUID}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-mono text-muted-foreground transition-colors hover:bg-muted/80"
-          >
-            UID: {USER_UID}
+          <button onClick={copyUID}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-mono text-muted-foreground transition-colors hover:bg-muted/80">
+            UID: {userUID}
             {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
           </button>
 
-          {/* Interests */}
+          {/* Gender Preference */}
+          {userData?.genderPreference && (
+            <p className="mt-2 text-xs text-muted-foreground">Looking for: {userData.genderPreference}</p>
+          )}
+
           {userData?.interests && userData.interests.length > 0 && (
             <div className="mt-3 flex flex-wrap justify-center gap-1.5">
               {userData.interests.map(i => (
-                <span key={i} className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                  {i}
-                </span>
+                <span key={i} className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{i}</span>
               ))}
             </div>
           )}
@@ -131,12 +124,9 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
 
       <div className="mx-auto mt-4 max-w-lg px-4 space-y-2 sm:px-6">
         {menuItems.map(({ icon: Icon, label, sub, page }) => (
-          <motion.button
-            key={label}
-            onClick={() => onNavigate?.(page)}
+          <motion.button key={label} onClick={() => onNavigate?.(page)}
             className="flex w-full items-center gap-3 rounded-2xl bg-card p-3.5 shadow-card text-left transition-colors hover:bg-muted/50 sm:gap-4 sm:p-4"
-            whileTap={{ scale: 0.98 }}
-          >
+            whileTap={{ scale: 0.98 }}>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
               <Icon className="h-5 w-5 text-primary" />
             </div>
@@ -148,11 +138,9 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
           </motion.button>
         ))}
 
-        <motion.button
-          onClick={onLogout}
+        <motion.button onClick={onLogout}
           className="flex w-full items-center gap-3 rounded-2xl bg-card p-3.5 shadow-card text-left transition-colors hover:bg-destructive/5 sm:gap-4 sm:p-4"
-          whileTap={{ scale: 0.98 }}
-        >
+          whileTap={{ scale: 0.98 }}>
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
             <LogOut className="h-5 w-5 text-destructive" />
           </div>
