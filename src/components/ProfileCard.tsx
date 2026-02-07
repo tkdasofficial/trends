@@ -6,6 +6,7 @@ interface ProfileCardProps {
   profile: UserProfile;
   onLike: () => void;
   onSkip: () => void;
+  onTap?: () => void;
 }
 
 const AVATAR_COLORS = [
@@ -14,7 +15,7 @@ const AVATAR_COLORS = [
   'from-secondary to-accent',
 ];
 
-export function ProfileCard({ profile, onLike, onSkip }: ProfileCardProps) {
+export function ProfileCard({ profile, onLike, onSkip, onTap }: ProfileCardProps) {
   const colorClass = AVATAR_COLORS[parseInt(profile.id) % AVATAR_COLORS.length];
 
   return (
@@ -27,13 +28,20 @@ export function ProfileCard({ profile, onLike, onSkip }: ProfileCardProps) {
         exit={{ opacity: 0, scale: 0.9, x: -200 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
       >
-        {/* Avatar area */}
-        <div className={`relative flex h-80 items-end bg-gradient-to-br ${colorClass}`}>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-8xl font-bold text-primary-foreground/20">
-              {profile.name[0]}
-            </span>
-          </div>
+        {/* Avatar area - tappable */}
+        <div
+          className={`relative flex h-80 items-end bg-gradient-to-br ${colorClass} cursor-pointer`}
+          onClick={onTap}
+        >
+          {profile.avatar ? (
+            <img src={profile.avatar} alt={profile.name} className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-8xl font-bold text-primary-foreground/20">
+                {profile.name[0]}
+              </span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent" />
           <div className="relative z-10 w-full p-6">
             <h3 className="text-2xl font-bold text-foreground">
@@ -53,10 +61,7 @@ export function ProfileCard({ profile, onLike, onSkip }: ProfileCardProps) {
           <p className="mb-4 text-foreground">{profile.bio}</p>
           <div className="mb-6 flex flex-wrap gap-2">
             {profile.interests.map(i => (
-              <span
-                key={i}
-                className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
-              >
+              <span key={i} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                 {i}
               </span>
             ))}

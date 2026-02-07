@@ -15,18 +15,20 @@ import { NotificationsPage } from '@/components/NotificationsPage';
 import { PrivacySafetyPage } from '@/components/PrivacySafetyPage';
 import { SettingsPage } from '@/components/SettingsPage';
 import { AudioCallPage } from '@/components/AudioCallPage';
+import { UpgradePage } from '@/components/UpgradePage';
 import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
+import { useUserStore } from '@/hooks/useUserStore';
 import { MOCK_CHATS, ChatThread, UserProfile } from '@/lib/data';
-import { Sparkles, Heart } from 'lucide-react';
+import { Heart } from 'lucide-react';
 
 type AppStep = 'welcome' | 'auth' | 'profile-setup' | 'done';
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
-type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
+type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade';
 
 const Index = () => {
   const [step, setStep] = useState<AppStep>('welcome');
-  const [userName, setUserName] = useState('');
+  const { user, updateUser, clearUser } = useUserStore();
   const [profile, setProfile] = useState<Partial<UserProfile>>({
     name: '',
     gender: '',
@@ -48,9 +50,9 @@ const Index = () => {
   if (step === 'auth') {
     return (
       <AuthPage
-        onAuthSuccess={(user) => {
-          setUserName(user.name);
-          setProfile(prev => ({ ...prev, name: user.name }));
+        onAuthSuccess={(authUser) => {
+          updateUser({ name: authUser.name, email: authUser.email });
+          setProfile(prev => ({ ...prev, name: authUser.name }));
           setStep('profile-setup');
         }}
       />
@@ -60,17 +62,34 @@ const Index = () => {
     return (
       <ProfileSetup
         profile={profile}
-        onUpdate={setProfile}
+        onUpdate={(p) => {
+          setProfile(p);
+          updateUser({
+            name: p.name || user.name,
+            gender: p.gender || '',
+            bio: p.bio || '',
+            interests: p.interests || [],
+          });
+        }}
         onComplete={() => setStep('done')}
       />
     );
   }
 
   // Profile sub-pages
-  if (profileSubPage === 'edit') return <EditProfilePage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'edit') {
+    return (
+      <EditProfilePage
+        onBack={() => setProfileSubPage(null)}
+        userData={user}
+        onSave={(data) => updateUser(data)}
+      />
+    );
+  }
   if (profileSubPage === 'notifications') return <NotificationsPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'settings') return <SettingsPage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'upgrade') return <UpgradePage onBack={() => setProfileSubPage(null)} />;
 
   // Audio call page
   if (callingUser) {
@@ -122,9 +141,12 @@ const Index = () => {
       {/* Top header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
         <TrendsLogo size={32} showText textClassName="text-lg" />
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 sm:h-9 sm:w-9">
-          <Sparkles className="h-4 w-4 text-primary" />
-        </div>
+        <button
+          onClick={() => setProfileSubPage('upgrade')}
+          className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95"
+        >
+          Upgrade
+        </button>
       </header>
 
       {/* Tab content */}
@@ -139,7 +161,12 @@ const Index = () => {
               exit={{ opacity: 0 }}
             >
               {hasMore && currentProfile ? (
-                <ProfileCard profile={currentProfile} onLike={like} onSkip={skip} />
+                <ProfileCard
+                  profile={currentProfile}
+                  onLike={like}
+                  onSkip={skip}
+                  onTap={() => setViewingProfile(currentProfile)}
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -195,8 +222,11 @@ const Index = () => {
             >
               <ProfilePage
                 onNavigate={setProfileSubPage}
-                onLogout={() => setStep('welcome')}
-                userName={userName || profile.name || 'Your Name'}
+                onLogout={() => {
+                  clearUser();
+                  setStep('welcome');
+                }}
+                userData={user}
               />
             </motion.div>
           )}
