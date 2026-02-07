@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { UserProfile } from '@/lib/data';
 import { Camera, Sparkles, X, Loader2, ImagePlus } from 'lucide-react';
