@@ -21,27 +21,11 @@ export function ChatView({ chat, onBack, onViewProfile }: ChatViewProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { transfers, sendFile, receiveFile, acceptTransfer, rejectTransfer } = useFileTransfer();
+  const { transfers, sendFile, acceptTransfer, rejectTransfer } = useFileTransfer();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, transfers]);
-
-  // Simulate incoming file after mount
-  useEffect(() => {
-    const t = setTimeout(() => {
-      receiveFile('vacation_photo.jpg', 2_400_000, 'image/jpeg', chat.user.name);
-    }, 4000);
-    return () => clearTimeout(t);
-  }, [receiveFile, chat.user.name]);
-
-  // Simulate incoming call after 8s
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setCallState('incoming');
-    }, 8000);
-    return () => clearTimeout(t);
-  }, []);
 
   const sendMessage = useCallback(() => {
     if (!input.trim()) return;

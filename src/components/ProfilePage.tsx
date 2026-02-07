@@ -6,7 +6,7 @@ import { UserData } from '@/hooks/useUserStore';
 
 const USER_UID = generateUID();
 
-type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings';
+type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
 
 interface ProfilePageProps {
   onNavigate?: (page: ProfileSubPage) => void;
