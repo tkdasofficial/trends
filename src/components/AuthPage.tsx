@@ -8,26 +8,26 @@ import {
   signInWithPopup,
   updateProfile,
 } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Eye, EyeOff, Mail, Lock, User, Phone, Calendar, AlertTriangle, Loader2 } from 'lucide-react';
 
 type AuthMode = 'login' | 'signup';
 
 interface AuthPageProps {
   onAuthSuccess: (user: { name: string; email: string; phone?: string; dob?: string }) => void;
+  isSignup?: (isNew: boolean) => void;
 }
 
-export function AuthPage({ onAuthSuccess }: AuthPageProps) {
+export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // Login fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  // Signup extra fields
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
@@ -48,35 +48,31 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        if (!fullName.trim()) {
-          setError('Please enter your full name');
-          setLoading(false);
-          return;
-        }
-        if (!dob) {
-          setError('Please enter your date of birth');
-          setLoading(false);
-          return;
-        }
-        if (!agreedToTerms) {
-          setError('Please accept the Terms & Conditions');
-          setLoading(false);
-          return;
-        }
-        // Check age
+        if (!fullName.trim()) { setError('Please enter your full name'); setLoading(false); return; }
+        if (!dob) { setError('Please enter your date of birth'); setLoading(false); return; }
+        if (!agreedToTerms) { setError('Please accept the Terms & Conditions'); setLoading(false); return; }
+
         const birth = new Date(dob);
         const today = new Date();
         let age = today.getFullYear() - birth.getFullYear();
         const m = today.getMonth() - birth.getMonth();
         if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-        if (age < 18) {
-          setError('You must be 18 or older to use Trends');
-          setLoading(false);
-          return;
-        }
+        if (age < 18) { setError('You must be 18 or older to use Trends'); setLoading(false); return; }
 
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(cred.user, { displayName: fullName.trim() });
+
+        // Save initial user data to Firestore (profileComplete = false for new users)
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          name: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          dob,
+          profileComplete: false,
+          createdAt: new Date().toISOString(),
+        }, { merge: true });
+
+        isSignup?.(true);
         onAuthSuccess({ name: fullName.trim(), email: email.trim(), phone: phone.trim(), dob });
       } else {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -107,9 +103,24 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Check if user exists in Firestore
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        // New social user - create Firestore doc
+        await setDoc(doc(db, 'users', user.uid), {
+          name: user.displayName || 'User',
+          email: user.email || '',
+          profileComplete: false,
+          createdAt: new Date().toISOString(),
+        });
+        isSignup?.(true);
+      }
+
       onAuthSuccess({
-        name: result.user.displayName || 'User',
-        email: result.user.email || '',
+        name: user.displayName || 'User',
+        email: user.email || '',
       });
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
@@ -129,7 +140,6 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {/* Logo */}
           <div className="mb-8">
             <TrendsLogo size={48} className="mb-6" />
             <h1 className="text-3xl font-extrabold text-foreground">
@@ -140,7 +150,6 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
             </p>
           </div>
 
-          {/* Social buttons */}
           <div className="space-y-3 mb-6">
             <button
               onClick={() => handleSocialLogin(googleProvider)}
@@ -167,7 +176,6 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
             </button>
           </div>
 
-          {/* Divider */}
           <div className="relative mb-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-border" />
@@ -177,136 +185,84 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
             </div>
           </div>
 
-          {/* Form */}
           <div className="space-y-4">
             {mode === 'signup' && (
               <>
                 <div className="relative">
                   <User className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={fullName}
+                  <input type="text" placeholder="Full Name" value={fullName}
                     onChange={e => { setFullName(e.target.value); clearError(); }}
-                    className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    maxLength={50}
-                  />
+                    className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" maxLength={50} />
                 </div>
                 <div className="relative">
                   <Phone className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                  <input
-                    type="tel"
-                    placeholder="Phone Number (optional)"
-                    value={phone}
+                  <input type="tel" placeholder="Phone Number (optional)" value={phone}
                     onChange={e => { setPhone(e.target.value); clearError(); }}
-                    className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
+                    className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                  <input
-                    type="date"
-                    placeholder="Date of Birth"
-                    value={dob}
+                  <input type="date" placeholder="Date of Birth" value={dob}
                     onChange={e => { setDob(e.target.value); clearError(); }}
                     className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    max={new Date().toISOString().split('T')[0]}
-                  />
+                    max={new Date().toISOString().split('T')[0]} />
                 </div>
               </>
             )}
 
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
+              <input type="email" placeholder="Email" value={email}
                 onChange={e => { setEmail(e.target.value); clearError(); }}
-                className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+                className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
 
             <div className="relative">
               <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Password"
-                value={password}
+              <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password}
                 onChange={e => { setPassword(e.target.value); clearError(); }}
-                className="w-full rounded-xl border border-border bg-card pl-10 pr-11 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground"
-              >
+                className="w-full rounded-xl border border-border bg-card pl-10 pr-11 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
 
-          {/* Terms checkbox */}
           {mode === 'signup' && (
             <label className="mt-4 flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={agreedToTerms}
+              <input type="checkbox" checked={agreedToTerms}
                 onChange={e => { setAgreedToTerms(e.target.checked); clearError(); }}
-                className="mt-0.5 h-4 w-4 rounded border-border text-primary accent-primary focus:ring-primary"
-              />
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary accent-primary focus:ring-primary" />
               <span className="text-xs text-muted-foreground leading-relaxed">
-                I agree to the{' '}
-                <span className="underline text-foreground cursor-pointer font-medium">Terms & Conditions</span> and{' '}
-                <span className="underline text-foreground cursor-pointer font-medium">Privacy Policy</span>.
-                You must be 18+ to use Trends.
+                I agree to the <span className="underline text-foreground cursor-pointer font-medium">Terms & Conditions</span> and{' '}
+                <span className="underline text-foreground cursor-pointer font-medium">Privacy Policy</span>. You must be 18+ to use Trends.
               </span>
             </label>
           )}
 
-          {/* Error */}
           {error && (
-            <motion.div
-              className="mt-4 flex items-center gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-            >
+            <motion.div className="mt-4 flex items-center gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {error}
             </motion.div>
           )}
 
-          {/* Submit */}
-          <motion.button
-            onClick={handleEmailAuth}
-            disabled={loading}
+          <motion.button onClick={handleEmailAuth} disabled={loading}
             className="mt-6 w-full flex items-center justify-center gap-2 rounded-2xl gradient-primary px-8 py-4 text-base font-bold text-primary-foreground shadow-soft disabled:opacity-50"
-            whileTap={!loading ? { scale: 0.97 } : {}}
-          >
-            {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : mode === 'login' ? (
-              'Continue'
-            ) : (
-              'Create Account'
-            )}
+            whileTap={!loading ? { scale: 0.97 } : {}}>
+            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : mode === 'login' ? 'Continue' : 'Create Account'}
           </motion.button>
 
-          {/* Toggle */}
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === 'login' ? (
-              <>
-                Don't have an account?{' '}
-                <button onClick={() => { setMode('signup'); clearError(); setAgreedToTerms(false); }} className="font-semibold text-primary hover:underline">
-                  Create your account
-                </button>
+              <>Don't have an account?{' '}
+                <button onClick={() => { setMode('signup'); clearError(); setAgreedToTerms(false); }} className="font-semibold text-primary hover:underline">Create your account</button>
               </>
             ) : (
-              <>
-                Already have an account?{' '}
-                <button onClick={() => { setMode('login'); clearError(); }} className="font-semibold text-primary hover:underline">
-                  Log in
-                </button>
+              <>Already have an account?{' '}
+                <button onClick={() => { setMode('login'); clearError(); }} className="font-semibold text-primary hover:underline">Log in</button>
               </>
             )}
           </p>
