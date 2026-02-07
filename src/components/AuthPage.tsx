@@ -7,12 +7,15 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Eye, EyeOff, Mail, Lock, User, Phone, Calendar, AlertTriangle, Loader2 } from 'lucide-react';
+import { validateEmail } from '@/lib/cyberSecurity';
+import { Eye, EyeOff, Mail, Lock, User, Phone, Calendar, AlertTriangle, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
-type AuthMode = 'login' | 'signup';
+type AuthMode = 'login' | 'signup' | 'forgot';
 
 interface AuthPageProps {
   onAuthSuccess: (user: { name: string; email: string; phone?: string; dob?: string }) => void;
@@ -23,6 +26,7 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
@@ -32,18 +36,40 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
 
-  const clearError = () => setError('');
+  const clearMessages = () => { setError(''); setSuccess(''); };
+
+  const handleForgotPassword = async () => {
+    clearMessages();
+    if (!email.trim()) { setError('Please enter your email address'); return; }
+
+    const emailCheck = validateEmail(email.trim());
+    if (!emailCheck.valid) { setError(emailCheck.reason || 'Invalid email'); return; }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setSuccess('Password reset link sent! Check your email inbox.');
+    } catch (err: any) {
+      if (err?.code === 'auth/user-not-found') {
+        setError('No account found with this email');
+      } else if (err?.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please try again later');
+      } else {
+        setError(err?.message || 'Failed to send reset email');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEmailAuth = async () => {
-    clearError();
-    if (!email.trim() || !password.trim()) {
-      setError('Please fill in all required fields');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
+    clearMessages();
+    if (!email.trim() || !password.trim()) { setError('Please fill in all required fields'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+
+    // Validate email against temp-mail blocklist
+    const emailCheck = validateEmail(email.trim());
+    if (!emailCheck.valid) { setError(emailCheck.reason || 'Invalid email'); return; }
 
     setLoading(true);
     try {
@@ -62,13 +88,16 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(cred.user, { displayName: fullName.trim() });
 
-        // Save initial user data to Firestore (profileComplete = false for new users)
+        // Send email verification
+        await sendEmailVerification(cred.user);
+
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: fullName.trim(),
           email: email.trim(),
           phone: phone.trim(),
           dob,
           profileComplete: false,
+          emailVerified: false,
           createdAt: new Date().toISOString(),
         }, { merge: true });
 
@@ -99,29 +128,35 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
   };
 
   const handleSocialLogin = async (provider: typeof googleProvider | typeof githubProvider) => {
-    clearError();
+    clearMessages();
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Check if user exists in Firestore
+      // Validate social email against temp-mail blocklist
+      if (user.email) {
+        const emailCheck = validateEmail(user.email);
+        if (!emailCheck.valid) {
+          setError('This email provider is not allowed. Please use a genuine email.');
+          setLoading(false);
+          return;
+        }
+      }
+
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
-        // New social user - create Firestore doc
         await setDoc(doc(db, 'users', user.uid), {
           name: user.displayName || 'User',
           email: user.email || '',
           profileComplete: false,
+          emailVerified: user.emailVerified,
           createdAt: new Date().toISOString(),
         });
         isSignup?.(true);
       }
 
-      onAuthSuccess({
-        name: user.displayName || 'User',
-        email: user.email || '',
-      });
+      onAuthSuccess({ name: user.displayName || 'User', email: user.email || '' });
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
         setError(err?.message || 'Social login failed');
@@ -131,15 +166,54 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
     }
   };
 
+  // Forgot Password UI
+  if (mode === 'forgot') {
+    return (
+      <div className="flex min-h-[100dvh] flex-col bg-background">
+        <div className="flex flex-1 flex-col items-center justify-center px-6 py-10">
+          <motion.div className="w-full max-w-sm" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+            <button onClick={() => { setMode('login'); clearMessages(); }} className="mb-6 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" /> Back to Login
+            </button>
+            <TrendsLogo size={48} className="mb-6" />
+            <h1 className="text-3xl font-extrabold text-foreground">Reset Password</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Enter your email and we'll send you a reset link</p>
+
+            <div className="relative mt-6">
+              <Mail className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+              <input type="email" placeholder="Email" value={email}
+                onChange={e => { setEmail(e.target.value); clearMessages(); }}
+                className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
+            </div>
+
+            {error && (
+              <motion.div className="mt-4 flex items-center gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+              </motion.div>
+            )}
+            {success && (
+              <motion.div className="mt-4 flex items-center gap-2 rounded-xl bg-green-500/10 px-4 py-3 text-sm text-green-600 dark:text-green-400"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <CheckCircle2 className="h-4 w-4 shrink-0" /> {success}
+              </motion.div>
+            )}
+
+            <motion.button onClick={handleForgotPassword} disabled={loading}
+              className="mt-6 w-full flex items-center justify-center gap-2 rounded-2xl gradient-primary px-8 py-4 text-base font-bold text-primary-foreground shadow-soft disabled:opacity-50"
+              whileTap={!loading ? { scale: 0.97 } : {}}>
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Send Reset Link'}
+            </motion.button>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-10">
-        <motion.div
-          className="w-full max-w-sm"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
+        <motion.div className="w-full max-w-sm" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           <div className="mb-8">
             <TrendsLogo size={48} className="mb-6" />
             <h1 className="text-3xl font-extrabold text-foreground">
@@ -151,11 +225,8 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
           </div>
 
           <div className="space-y-3 mb-6">
-            <button
-              onClick={() => handleSocialLogin(googleProvider)}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
-            >
+            <button onClick={() => handleSocialLogin(googleProvider)} disabled={loading}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50">
               <svg className="h-5 w-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -164,11 +235,8 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
               </svg>
               Continue with Google
             </button>
-            <button
-              onClick={() => handleSocialLogin(githubProvider)}
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
-            >
+            <button onClick={() => handleSocialLogin(githubProvider)} disabled={loading}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50">
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.02 0c2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.82.58C20.57 21.8 24 17.3 24 12c0-6.63-5.37-12-12-12z" />
               </svg>
@@ -177,9 +245,7 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
           </div>
 
           <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-background px-3 text-muted-foreground">OR</span>
             </div>
@@ -191,19 +257,19 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
                 <div className="relative">
                   <User className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                   <input type="text" placeholder="Full Name" value={fullName}
-                    onChange={e => { setFullName(e.target.value); clearError(); }}
+                    onChange={e => { setFullName(e.target.value); clearMessages(); }}
                     className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" maxLength={50} />
                 </div>
                 <div className="relative">
                   <Phone className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                   <input type="tel" placeholder="Phone Number (optional)" value={phone}
-                    onChange={e => { setPhone(e.target.value); clearError(); }}
+                    onChange={e => { setPhone(e.target.value); clearMessages(); }}
                     className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                   <input type="date" placeholder="Date of Birth" value={dob}
-                    onChange={e => { setDob(e.target.value); clearError(); }}
+                    onChange={e => { setDob(e.target.value); clearMessages(); }}
                     className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                     max={new Date().toISOString().split('T')[0]} />
                 </div>
@@ -213,14 +279,14 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
               <input type="email" placeholder="Email" value={email}
-                onChange={e => { setEmail(e.target.value); clearError(); }}
+                onChange={e => { setEmail(e.target.value); clearMessages(); }}
                 className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
             </div>
 
             <div className="relative">
               <Lock className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
               <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password}
-                onChange={e => { setPassword(e.target.value); clearError(); }}
+                onChange={e => { setPassword(e.target.value); clearMessages(); }}
                 className="w-full rounded-xl border border-border bg-card pl-10 pr-11 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground">
@@ -229,10 +295,17 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
             </div>
           </div>
 
+          {mode === 'login' && (
+            <button onClick={() => { setMode('forgot'); clearMessages(); }}
+              className="mt-2 text-xs text-primary hover:underline font-medium">
+              Forgot Password?
+            </button>
+          )}
+
           {mode === 'signup' && (
             <label className="mt-4 flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={agreedToTerms}
-                onChange={e => { setAgreedToTerms(e.target.checked); clearError(); }}
+                onChange={e => { setAgreedToTerms(e.target.checked); clearMessages(); }}
                 className="mt-0.5 h-4 w-4 rounded border-border text-primary accent-primary focus:ring-primary" />
               <span className="text-xs text-muted-foreground leading-relaxed">
                 I agree to the <span className="underline text-foreground cursor-pointer font-medium">Terms & Conditions</span> and{' '}
@@ -244,8 +317,13 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
           {error && (
             <motion.div className="mt-4 flex items-center gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive"
               initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              {error}
+              <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+            </motion.div>
+          )}
+          {success && (
+            <motion.div className="mt-4 flex items-center gap-2 rounded-xl bg-green-500/10 px-4 py-3 text-sm text-green-600 dark:text-green-400"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <CheckCircle2 className="h-4 w-4 shrink-0" /> {success}
             </motion.div>
           )}
 
@@ -258,11 +336,11 @@ export function AuthPage({ onAuthSuccess, isSignup }: AuthPageProps) {
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {mode === 'login' ? (
               <>Don't have an account?{' '}
-                <button onClick={() => { setMode('signup'); clearError(); setAgreedToTerms(false); }} className="font-semibold text-primary hover:underline">Create your account</button>
+                <button onClick={() => { setMode('signup'); clearMessages(); setAgreedToTerms(false); }} className="font-semibold text-primary hover:underline">Create your account</button>
               </>
             ) : (
               <>Already have an account?{' '}
-                <button onClick={() => { setMode('login'); clearError(); }} className="font-semibold text-primary hover:underline">Log in</button>
+                <button onClick={() => { setMode('login'); clearMessages(); }} className="font-semibold text-primary hover:underline">Log in</button>
               </>
             )}
           </p>

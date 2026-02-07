@@ -24,13 +24,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { ChatThread, UserProfile } from '@/lib/data';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Heart, ShieldCheck, Loader2 } from 'lucide-react';
+import { sendEmailVerification } from 'firebase/auth';
+import { Heart, ShieldCheck, Loader2, MailWarning, RefreshCw } from 'lucide-react';
 
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
 type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
 
 const Index = () => {
-  const { firebaseUser, loading: authLoading, isNewUser, profileComplete, logout, markProfileComplete } = useAuth();
+  const { firebaseUser, loading: authLoading, isNewUser, profileComplete, emailVerified, logout, markProfileComplete, refreshEmailVerification } = useAuth();
   const { user, updateUser, clearUser, loaded: userLoaded } = useUserStore();
   const [showWelcome, setShowWelcome] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
@@ -185,6 +186,22 @@ const Index = () => {
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
+      {/* Email verification banner */}
+      {firebaseUser && !emailVerified && (
+        <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl bg-amber-500/10 px-4 py-3 text-sm">
+          <MailWarning className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="flex-1 text-amber-700 dark:text-amber-400">Verify your email to unlock the verification badge.</span>
+          <button onClick={async () => {
+            if (firebaseUser) {
+              try { await sendEmailVerification(firebaseUser); } catch {}
+            }
+          }} className="text-xs font-semibold text-amber-600 hover:underline whitespace-nowrap">Resend</button>
+          <button onClick={refreshEmailVerification} className="text-amber-600 hover:text-amber-700">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top header */}
       <header className="flex items-center justify-between px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4">
         <TrendsLogo size={32} showText textClassName="text-lg" />
@@ -285,6 +302,7 @@ const Index = () => {
                   clearUser();
                 }}
                 userData={user}
+                emailVerified={emailVerified}
               />
             </motion.div>
           )}
