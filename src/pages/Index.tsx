@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { WelcomeScreen } from '@/components/WelcomeScreen';
-import { AuthPage } from '@/components/AuthPage';
-import { ProfileSetup } from '@/components/ProfileSetup';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ProfileCard } from '@/components/ProfileCard';
 import { BottomNav } from '@/components/BottomNav';
 import { ChatList } from '@/components/ChatList';
@@ -25,40 +23,67 @@ import { useUserStore } from '@/hooks/useUserStore';
 import { useAuth } from '@/hooks/useAuth';
 import { useD2DChats } from '@/hooks/useD2DChat';
 import { ChatThread, UserProfile } from '@/lib/data';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { sendEmailVerification } from 'firebase/auth';
 import { Heart, ShieldCheck, Loader2, MailWarning, RefreshCw, Search, X } from 'lucide-react';
 
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
 type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin' | 'support' | 'terms' | 'privacy-policy';
 
-const Index = () => {
-  const { firebaseUser, loading: authLoading, isNewUser, profileComplete, emailVerified, logout, markProfileComplete, refreshEmailVerification } = useAuth();
-  const { user, updateUser, clearUser, loaded: userLoaded } = useUserStore();
-  const [showWelcome, setShowWelcome] = useState(true);
-  const [showAuth, setShowAuth] = useState(false);
+const TAB_ROUTES: Record<Tab, string> = {
+  discover: '/discover',
+  matches: '/matches',
+  chat: '/chat',
+  profile: '/profile',
+};
+
+interface IndexProps {
+  defaultTab?: Tab;
+  subPage?: SubPage;
+}
+
+const Index = ({ defaultTab = 'discover', subPage: initialSubPage = null }: IndexProps) => {
+  const navigate = useNavigate();
+  const { firebaseUser, loading: authLoading, profileComplete, emailVerified, logout, refreshEmailVerification } = useAuth();
+  const { user, updateUser, clearUser } = useUserStore();
 
   const { currentProfile, like, skip, matches, hasMore, loading: discoverLoading, refresh: refreshDiscover, searchByUID, searchResult, searchLoading, searchError, clearSearch } = useDiscovery(user.genderPreference);
   const { chats, startChat } = useD2DChats();
-  const [activeTab, setActiveTab] = useState<Tab>('discover');
+  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
-  const [profileSubPage, setProfileSubPage] = useState<SubPage>(null);
+  const [profileSubPage, setProfileSubPage] = useState<SubPage>(initialSubPage);
   const [callingUser, setCallingUser] = useState<UserProfile | null>(null);
   const [uidSearch, setUidSearch] = useState('');
 
   const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
 
-  // Pre-fill user data from Firebase Auth
+  // Redirect if not authenticated
   useEffect(() => {
-    if (firebaseUser && !user.email) {
-      updateUser({
-        name: firebaseUser.displayName || '',
-        email: firebaseUser.email || '',
-      });
+    if (!authLoading && !firebaseUser) {
+      navigate('/', { replace: true });
     }
-  }, [firebaseUser]);
+    if (!authLoading && firebaseUser && !profileComplete) {
+      navigate('/get-ready', { replace: true });
+    }
+  }, [authLoading, firebaseUser, profileComplete, navigate]);
+
+  // Sync tab with default prop
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
+
+  useEffect(() => {
+    setProfileSubPage(initialSubPage);
+  }, [initialSubPage]);
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    navigate(TAB_ROUTES[tab], { replace: true });
+  };
+
+  const handleSubPageNav = (page: SubPage) => {
+    setProfileSubPage(page);
+  };
 
   if (authLoading) {
     return (
@@ -71,80 +96,29 @@ const Index = () => {
     );
   }
 
-  // Not logged in
-  if (!firebaseUser) {
-    if (showAuth) {
-      return (
-        <AuthPage
-          onAuthSuccess={(authUser) => {
-            updateUser({ name: authUser.name, email: authUser.email, phone: authUser.phone || '', dob: authUser.dob || '' });
-          }}
-          isSignup={() => {}}
-        />
-      );
-    }
-    return <WelcomeScreen onGetStarted={() => setShowAuth(true)} />;
-  }
-
-  // New user → profile setup
-  if (isNewUser && !profileComplete) {
-    return (
-      <ProfileSetup
-        profile={{
-          name: user.name || firebaseUser.displayName || '',
-          gender: user.gender,
-          bio: user.bio,
-          interests: user.interests,
-        }}
-        onUpdate={(p) => {
-          updateUser({
-            name: p.name || user.name,
-            gender: p.gender || '',
-            bio: p.bio || '',
-            interests: p.interests || [],
-          });
-        }}
-        onGenderPreference={(pref) => {
-          updateUser({ genderPreference: pref });
-        }}
-        onComplete={async () => {
-          try {
-            await setDoc(doc(db, 'users', firebaseUser.uid), { profileComplete: true }, { merge: true });
-            localStorage.setItem(`trends_profile_complete_${firebaseUser.uid}`, 'true');
-          } catch (err) {
-            console.error('Failed to mark profile complete:', err);
-            localStorage.setItem(`trends_profile_complete_${firebaseUser.uid}`, 'true');
-          }
-          updateUser({ profileComplete: true });
-          markProfileComplete();
-        }}
-      />
-    );
-  }
+  if (!firebaseUser || !profileComplete) return null;
 
   // Sub-pages
   if (profileSubPage === 'edit') {
     return (
-      <EditProfilePage onBack={() => setProfileSubPage(null)} userData={user}
+      <EditProfilePage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} userData={user}
         onSave={(data) => { updateUser(data); refreshDiscover(); }} />
     );
   }
-  if (profileSubPage === 'notifications') return <NotificationsPage onBack={() => setProfileSubPage(null)} />;
-  if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => setProfileSubPage(null)} />;
-  if (profileSubPage === 'settings') return <SettingsPage onBack={() => setProfileSubPage(null)} />;
-  if (profileSubPage === 'upgrade') return <UpgradePage onBack={() => setProfileSubPage(null)} />;
-  if (profileSubPage === 'support') return <SupportPage onBack={() => setProfileSubPage(null)} />;
-  if (profileSubPage === 'terms') return <TermsPage onBack={() => setProfileSubPage(null)} page="terms" />;
-  if (profileSubPage === 'privacy-policy') return <TermsPage onBack={() => setProfileSubPage(null)} page="privacy-policy" />;
+  if (profileSubPage === 'notifications') return <NotificationsPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} />;
+  if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} />;
+  if (profileSubPage === 'settings') return <SettingsPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} />;
+  if (profileSubPage === 'upgrade') return <UpgradePage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} />;
+  if (profileSubPage === 'support') return <SupportPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} />;
+  if (profileSubPage === 'terms') return <TermsPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} page="terms" />;
+  if (profileSubPage === 'privacy-policy') return <TermsPage onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} page="privacy-policy" />;
   if (profileSubPage === 'admin') {
-    return <AdminPanel onBack={() => setProfileSubPage(null)} adminEmail={user.email} />;
+    return <AdminPanel onBack={() => { setProfileSubPage(null); navigate('/profile', { replace: true }); }} adminEmail={user.email} />;
   }
 
   // Audio call
   if (callingUser) {
-    return (
-      <AudioCallPage user={callingUser} direction="outgoing" onEnd={() => setCallingUser(null)} />
-    );
+    return <AudioCallPage user={callingUser} direction="outgoing" onEnd={() => setCallingUser(null)} />;
   }
 
   // Profile view
@@ -192,9 +166,7 @@ const Index = () => {
   }
 
   const handleUIDSearch = () => {
-    if (uidSearch.trim()) {
-      searchByUID(uidSearch.trim());
-    }
+    if (uidSearch.trim()) searchByUID(uidSearch.trim());
   };
 
   return (
@@ -218,12 +190,12 @@ const Index = () => {
         <TrendsLogo size={32} showText textClassName="text-lg" />
         <div className="flex items-center gap-2">
           {isAdmin(user.email) && (
-            <button onClick={() => setProfileSubPage('admin')}
+            <button onClick={() => handleSubPageNav('admin')}
               className="flex items-center gap-1 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive transition-all hover:bg-destructive/20 active:scale-95">
               <ShieldCheck className="h-3.5 w-3.5" /> Admin
             </button>
           )}
-          <button onClick={() => setProfileSubPage('upgrade')}
+          <button onClick={() => navigate('/upgrade')}
             className="rounded-full gradient-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-soft transition-all hover:opacity-90 active:scale-95">
             Upgrade
           </button>
@@ -326,8 +298,8 @@ const Index = () => {
           {activeTab === 'profile' && (
             <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <ProfilePage
-                onNavigate={setProfileSubPage}
-                onLogout={async () => { await logout(); clearUser(); }}
+                onNavigate={handleSubPageNav}
+                onLogout={async () => { await logout(); clearUser(); navigate('/', { replace: true }); }}
                 userData={user}
                 emailVerified={emailVerified}
               />
@@ -336,7 +308,7 @@ const Index = () => {
         </AnimatePresence>
       </main>
 
-      <BottomNav active={activeTab} onChange={setActiveTab} unreadCount={unreadCount} />
+      <BottomNav active={activeTab} onChange={handleTabChange} unreadCount={unreadCount} />
     </div>
   );
 };
