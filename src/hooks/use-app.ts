@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { UserProfile } from '@/lib/data';
-import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 
 export function useOnboarding() {
@@ -36,6 +36,9 @@ export function useDiscovery(genderPreference: string = 'All') {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [matches, setMatches] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchResult, setSearchResult] = useState<UserProfile | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
 
   const fetchProfiles = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -62,22 +65,9 @@ export function useDiscovery(genderPreference: string = 'All') {
       const snap = await getDocs(q);
       const fetched: UserProfile[] = [];
       snap.forEach(docSnap => {
-        if (docSnap.id === uid) return; // Skip self
+        if (docSnap.id === uid) return;
         const d = docSnap.data() as Record<string, any>;
-        fetched.push({
-          id: docSnap.id,
-          uid: d.uid || docSnap.id.substring(0, 8).toUpperCase(),
-          name: d.name || 'User',
-          age: d.dob ? calculateAge(d.dob) : 0,
-          gender: d.gender || '',
-          bio: d.bio || '',
-          interests: d.interests || [],
-          avatar: d.profileImage || '',
-          location: d.city ? `${d.city}${d.country ? ', ' + d.country : ''}` : '',
-          country: d.country || '',
-          city: d.city || '',
-          distance: '',
-        });
+        fetched.push(mapFirestoreToProfile(docSnap.id, d));
       });
       setProfiles(fetched);
       setCurrentIndex(0);
@@ -90,6 +80,47 @@ export function useDiscovery(genderPreference: string = 'All') {
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
+
+  // Search by UID (e.g. TR-A1B2C3D4E5F6)
+  const searchByUID = useCallback(async (uidQuery: string) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    setSearchLoading(true);
+    setSearchError('');
+    setSearchResult(null);
+
+    try {
+      const cleanQuery = uidQuery.trim().toUpperCase();
+      const q = query(
+        collection(db, 'users'),
+        where('uid', '==', cleanQuery),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setSearchError('No user found with this UID');
+      } else {
+        const docSnap = snap.docs[0];
+        if (docSnap.id === uid) {
+          setSearchError("That's your own profile!");
+        } else {
+          const d = docSnap.data() as Record<string, any>;
+          setSearchResult(mapFirestoreToProfile(docSnap.id, d));
+        }
+      }
+    } catch (err) {
+      console.error('UID search failed:', err);
+      setSearchError('Search failed. Please try again.');
+    }
+    setSearchLoading(false);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchResult(null);
+    setSearchError('');
+  }, []);
 
   const like = useCallback(() => {
     if (currentIndex < profiles.length) {
@@ -112,6 +143,28 @@ export function useDiscovery(genderPreference: string = 'All') {
     hasMore: currentIndex < profiles.length,
     loading,
     refresh: fetchProfiles,
+    searchByUID,
+    searchResult,
+    searchLoading,
+    searchError,
+    clearSearch,
+  };
+}
+
+function mapFirestoreToProfile(docId: string, d: Record<string, any>): UserProfile {
+  return {
+    id: docId,
+    uid: d.uid || docId.substring(0, 8).toUpperCase(),
+    name: d.name || 'User',
+    age: d.dob ? calculateAge(d.dob) : 0,
+    gender: d.gender || '',
+    bio: d.bio || '',
+    interests: d.interests || [],
+    avatar: d.profileImage || '',
+    location: d.city ? `${d.city}${d.country ? ', ' + d.country : ''}` : '',
+    country: d.country || '',
+    city: d.city || '',
+    distance: '',
   };
 }
 

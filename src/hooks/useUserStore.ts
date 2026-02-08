@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, auth } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
+import { uploadImageToCloud } from '@/lib/supabaseStorage';
 
 export interface UserData {
   name: string;
@@ -39,13 +39,23 @@ const DEFAULT_USER: UserData = {
   genderPreference: 'All',
 };
 
-// Generate a unique UID from Firebase auth UID
+/**
+ * Generate a unique 12-character alphanumeric UID in format TR-XXXXXXXXXXXX
+ * Uses Firebase UID as seed for determinism
+ */
 function generateUniqueUID(firebaseUid: string): string {
-  // Use first 4 chars of firebase UID + timestamp hash for uniqueness
-  const hash = firebaseUid.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
-  const hex = Math.abs(hash).toString(36).toUpperCase().substring(0, 4);
-  const suffix = firebaseUid.substring(0, 4).toUpperCase();
-  return `TR-${suffix}${hex}`;
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  // Use multiple hash passes of the firebase UID for entropy
+  let seed = 0;
+  for (let i = 0; i < firebaseUid.length; i++) {
+    seed = ((seed << 5) - seed + firebaseUid.charCodeAt(i)) | 0;
+  }
+  for (let i = 0; i < 12; i++) {
+    seed = ((seed * 1103515245 + 12345) & 0x7fffffff);
+    result += chars[Math.abs(seed) % chars.length];
+  }
+  return `TR-${result}`;
 }
 
 export function useUserStore() {
@@ -60,13 +70,14 @@ export function useUserStore() {
       const snap = await getDoc(doc(db, 'users', uid));
       if (snap.exists()) {
         const data = snap.data() as Partial<UserData>;
-        // Ensure UID is set
-        const userUid = data.uid || generateUniqueUID(uid);
-        setUser({ ...DEFAULT_USER, ...data, uid: userUid });
-        // Save UID if not yet persisted
-        if (!data.uid) {
+        // Ensure UID is the new 12-char format
+        let userUid = data.uid || '';
+        if (!userUid || userUid.length < 15) {
+          // Old format or missing — regenerate
+          userUid = generateUniqueUID(uid);
           setDoc(doc(db, 'users', uid), { uid: userUid }, { merge: true }).catch(() => {});
         }
+        setUser({ ...DEFAULT_USER, ...data, uid: userUid });
       } else {
         const userUid = generateUniqueUID(uid);
         setUser(prev => ({
@@ -75,7 +86,6 @@ export function useUserStore() {
           email: auth.currentUser?.email || '',
           uid: userUid,
         }));
-        // Create initial doc with UID
         setDoc(doc(db, 'users', uid), { uid: userUid }, { merge: true }).catch(() => {});
       }
     } catch (err) {
@@ -88,36 +98,22 @@ export function useUserStore() {
     loadFromFirestore();
   }, [loadFromFirestore]);
 
-  // Upload image as blob (not data URL) to Firebase Storage
-  const uploadImageBlob = useCallback(async (firebaseUid: string, name: string, dataUrl: string): Promise<string> => {
-    try {
-      // Convert data URL to blob
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-      const storageRef = ref(storage, `users/${firebaseUid}/${name}_${Date.now()}.jpg`);
-      await uploadBytes(storageRef, blob);
-      return await getDownloadURL(storageRef);
-    } catch (err) {
-      console.error('Image upload failed:', err);
-      return dataUrl; // Fallback
-    }
-  }, []);
-
   const saveToFirestore = useCallback(async (data: UserData) => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
     try {
       let profileImageUrl = data.profileImage;
+      // Upload profile image to Supabase Storage (Lovable Cloud)
       if (data.profileImage && data.profileImage.startsWith('data:')) {
-        profileImageUrl = await uploadImageBlob(uid, 'profile', data.profileImage);
+        profileImageUrl = await uploadImageToCloud(uid, 'profile', data.profileImage);
       }
 
       const verificationUrls: string[] = [];
       for (let i = 0; i < data.verificationImages.length; i++) {
         const img = data.verificationImages[i];
         if (img.startsWith('data:')) {
-          const url = await uploadImageBlob(uid, `verification_${i}`, img);
+          const url = await uploadImageToCloud(uid, `verification_${i}`, img);
           verificationUrls.push(url);
         } else {
           verificationUrls.push(img);
@@ -136,7 +132,7 @@ export function useUserStore() {
     } catch (err) {
       console.error('Failed to save to Firestore:', err);
     }
-  }, [uploadImageBlob]);
+  }, []);
 
   const updateUser = useCallback((partial: Partial<UserData>) => {
     setUser(prev => {
