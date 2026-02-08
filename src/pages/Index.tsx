@@ -23,7 +23,7 @@ import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
 import { useUserStore } from '@/hooks/useUserStore';
 import { useAuth } from '@/hooks/useAuth';
-import { useFirebaseChat } from '@/hooks/useFirebaseChat';
+import { useD2DChats } from '@/hooks/useD2DChat';
 import { ChatThread, UserProfile } from '@/lib/data';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -40,7 +40,7 @@ const Index = () => {
   const [showAuth, setShowAuth] = useState(false);
 
   const { currentProfile, like, skip, matches, hasMore, loading: discoverLoading, refresh: refreshDiscover, searchByUID, searchResult, searchLoading, searchError, clearSearch } = useDiscovery(user.genderPreference);
-  const { chats, startChat } = useFirebaseChat();
+  const { chats, startChat } = useD2DChats();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
@@ -154,7 +154,7 @@ const Index = () => {
         user={viewingProfile}
         onBack={() => setViewingProfile(null)}
         onMessage={async () => {
-          const chatId = await startChat(viewingProfile.id);
+          const chatId = await startChat(viewingProfile);
           if (chatId) {
             const thread: ChatThread = {
               id: chatId,

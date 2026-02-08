@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, setDoc, onSnapshot, deleteDoc, collection, addDoc, getDocs } from 'firebase/firestore';
+import { onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
+import { getPeer, removePeer, WebRTCPeer } from '@/lib/webrtcPeer';
+import { saveCallRecord } from '@/lib/localStore';
 
 type CallStatus = 'idle' | 'outgoing' | 'incoming' | 'connected' | 'ended';
 
@@ -12,13 +14,6 @@ interface CallState {
   speaker: boolean;
 }
 
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
-
 export function useWebRTC() {
   const [callState, setCallState] = useState<CallState>({
     status: 'idle',
@@ -28,113 +23,60 @@ export function useWebRTC() {
     speaker: false,
   });
 
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
-  const callDocIdRef = useRef<string | null>(null);
-  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const peerRef = useRef<WebRTCPeer | null>(null);
+  const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const callerNameRef = useRef<string>('');
+  const callerAvatarRef = useRef<string>('');
 
   const cleanup = useCallback(() => {
-    pcRef.current?.close();
-    pcRef.current = null;
-    localStreamRef.current?.getTracks().forEach(t => t.stop());
-    localStreamRef.current = null;
-    remoteStreamRef.current = null;
-    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
-
-    // Clean up Firestore signaling doc
-    if (callDocIdRef.current) {
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        deleteDoc(doc(db, 'calls', callDocIdRef.current)).catch(() => {});
-      }
+    if (durationRef.current) clearInterval(durationRef.current);
+    durationRef.current = null;
+    if (peerRef.current) {
+      peerRef.current.cleanup();
+      peerRef.current = null;
     }
-    callDocIdRef.current = null;
   }, []);
 
-  const startCall = useCallback(async (remoteUserId: string) => {
+  const startCall = useCallback(async (remoteUserId: string, remoteName?: string, remoteAvatar?: string) => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
+    callerNameRef.current = remoteName || 'User';
+    callerAvatarRef.current = remoteAvatar || '';
     setCallState(prev => ({ ...prev, status: 'outgoing', remoteUserId }));
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = stream;
+      const peer = new WebRTCPeer(remoteUserId);
+      peerRef.current = peer;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      pcRef.current = pc;
-
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      const remoteStream = new MediaStream();
-      remoteStreamRef.current = remoteStream;
-      pc.ontrack = (e) => e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
-
-      // Create signaling document
-      const callDocId = `${uid}_${remoteUserId}_${Date.now()}`;
-      callDocIdRef.current = callDocId;
-
-      // Collect ICE candidates
-      const candidates: RTCIceCandidateInit[] = [];
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          addDoc(collection(db, 'calls', callDocId, 'offerCandidates'), e.candidate.toJSON()).catch(() => {});
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      await setDoc(doc(db, 'calls', callDocId), {
-        offer: { type: offer.type, sdp: offer.sdp },
-        callerId: uid,
-        receiverId: remoteUserId,
-        status: 'ringing',
-        createdAt: new Date().toISOString(),
-      });
-
-      // Listen for answer
-      const unsub = onSnapshot(doc(db, 'calls', callDocId), async (snap) => {
-        const data = snap.data();
-        if (!data) return;
-
-        if (data.answer && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      peer.onStatusChange = (status) => {
+        if (status === 'connected') {
           setCallState(prev => ({ ...prev, status: 'connected' }));
-
-          // Start duration timer
-          durationIntervalRef.current = setInterval(() => {
+          startTimeRef.current = Date.now();
+          durationRef.current = setInterval(() => {
             setCallState(prev => ({ ...prev, duration: prev.duration + 1 }));
           }, 1000);
 
           // Play remote audio
-          const audio = new Audio();
-          audio.srcObject = remoteStream;
-          audio.play().catch(() => {});
-        }
-
-        if (data.status === 'rejected' || data.status === 'ended') {
-          cleanup();
-          setCallState({ status: 'ended', remoteUserId: null, duration: 0, muted: false, speaker: false });
-        }
-      });
-
-      // Listen for answer ICE candidates
-      onSnapshot(collection(db, 'calls', callDocId, 'answerCandidates'), (snap) => {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            pc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(() => {});
+          const remoteStream = peer.getRemoteStream();
+          if (remoteStream) {
+            const audio = new Audio();
+            audio.srcObject = remoteStream;
+            audio.play().catch(() => {});
           }
-        });
-      });
-
-      // Connection state
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-          endCall();
+        } else if (status === 'disconnected' || status === 'failed') {
+          endCallInternal('completed');
         }
       };
+
+      peer.onRemoteStream = (stream) => {
+        const audio = new Audio();
+        audio.srcObject = stream;
+        audio.play().catch(() => {});
+      };
+
+      await peer.connect(true); // with audio
     } catch (err) {
       console.error('Failed to start call:', err);
       cleanup();
@@ -142,19 +84,36 @@ export function useWebRTC() {
     }
   }, [cleanup]);
 
-  const endCall = useCallback(() => {
-    if (callDocIdRef.current) {
-      setDoc(doc(db, 'calls', callDocIdRef.current), { status: 'ended' }, { merge: true }).catch(() => {});
+  const endCallInternal = useCallback((status: 'completed' | 'missed' | 'rejected' = 'completed') => {
+    const duration = callState.duration;
+    const peerId = callState.remoteUserId || peerRef.current?.peerId;
+
+    // Save call history
+    if (peerId) {
+      saveCallRecord({
+        id: `call_${Date.now()}`,
+        peerId,
+        peerName: callerNameRef.current,
+        peerAvatar: callerAvatarRef.current,
+        direction: callState.status === 'incoming' ? 'incoming' : 'outgoing',
+        duration,
+        timestamp: new Date().toISOString(),
+        status,
+      });
     }
+
     cleanup();
     setCallState({ status: 'idle', remoteUserId: null, duration: 0, muted: false, speaker: false });
-  }, [cleanup]);
+  }, [cleanup, callState]);
+
+  const endCall = useCallback(() => {
+    endCallInternal('completed');
+  }, [endCallInternal]);
 
   const toggleMute = useCallback(() => {
-    const stream = localStreamRef.current;
-    if (stream) {
-      stream.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
-      setCallState(prev => ({ ...prev, muted: !prev.muted }));
+    if (peerRef.current) {
+      const muted = peerRef.current.toggleMute();
+      setCallState(prev => ({ ...prev, muted }));
     }
   }, []);
 
@@ -162,20 +121,14 @@ export function useWebRTC() {
     setCallState(prev => ({ ...prev, speaker: !prev.speaker }));
   }, []);
 
-  // Listen for incoming calls
+  // Listen for incoming audio calls
   useEffect(() => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
-    // We'll poll for incoming calls using onSnapshot on a specific doc pattern
-    // For simplicity, we listen to calls where receiverId == uid and status == 'ringing'
-    // This requires a composite index in Firestore
-    const q = collection(db, 'calls');
-    
-    // Instead, we use a user-specific document for call signaling
-    const unsub = onSnapshot(doc(db, 'callSignals', uid), async (snap) => {
+    const unsub = onSnapshot(doc(db, 'peerInbox', uid), async (snap) => {
       const data = snap.data();
-      if (!data || data.status !== 'ringing') return;
+      if (!data || !data.signalId || !data.withAudio) return;
       if (callState.status !== 'idle') return;
 
       setCallState(prev => ({
@@ -183,77 +136,68 @@ export function useWebRTC() {
         status: 'incoming',
         remoteUserId: data.callerId,
       }));
-      callDocIdRef.current = data.callDocId;
+
+      callerNameRef.current = data.callerName || 'User';
     });
 
     return unsub;
   }, [callState.status]);
 
   const answerCall = useCallback(async () => {
-    const callDocId = callDocIdRef.current;
-    if (!callDocId) return;
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = stream;
+      // Get signal ID from inbox
+      const inboxSnap = await (await import('firebase/firestore')).getDoc(doc(db, 'peerInbox', uid));
+      const inboxData = inboxSnap.data();
+      if (!inboxData?.signalId) return;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      pcRef.current = pc;
+      const peer = new WebRTCPeer(inboxData.callerId);
+      peerRef.current = peer;
 
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      const remoteStream = new MediaStream();
-      remoteStreamRef.current = remoteStream;
-      pc.ontrack = (e) => e.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          addDoc(collection(db, 'calls', callDocId, 'answerCandidates'), e.candidate.toJSON()).catch(() => {});
+      peer.onStatusChange = (status) => {
+        if (status === 'connected') {
+          setCallState(prev => ({ ...prev, status: 'connected' }));
+          startTimeRef.current = Date.now();
+          durationRef.current = setInterval(() => {
+            setCallState(prev => ({ ...prev, duration: prev.duration + 1 }));
+          }, 1000);
+        } else if (status === 'disconnected' || status === 'failed') {
+          endCallInternal('completed');
         }
       };
 
-      const callDoc = await (await import('firebase/firestore')).getDoc(doc(db, 'calls', callDocId));
-      const callData = callDoc.data();
-      if (!callData?.offer) return;
+      peer.onRemoteStream = (stream) => {
+        const audio = new Audio();
+        audio.srcObject = stream;
+        audio.play().catch(() => {});
+      };
 
-      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      await setDoc(doc(db, 'calls', callDocId), {
-        answer: { type: answer.type, sdp: answer.sdp },
-        status: 'connected',
-      }, { merge: true });
-
-      // Add offer candidates
-      const offerCandidates = await getDocs(collection(db, 'calls', callDocId, 'offerCandidates'));
-      offerCandidates.forEach(d => {
-        pc.addIceCandidate(new RTCIceCandidate(d.data())).catch(() => {});
-      });
-
-      setCallState(prev => ({ ...prev, status: 'connected' }));
-      durationIntervalRef.current = setInterval(() => {
-        setCallState(prev => ({ ...prev, duration: prev.duration + 1 }));
-      }, 1000);
-
-      const audio = new Audio();
-      audio.srcObject = remoteStream;
-      audio.play().catch(() => {});
+      await peer.answer(inboxData.signalId);
+      deleteDoc(doc(db, 'peerInbox', uid)).catch(() => {});
     } catch (err) {
       console.error('Failed to answer call:', err);
-      endCall();
+      endCallInternal('missed');
     }
-  }, [endCall]);
+  }, [endCallInternal]);
 
-  const rejectCall = useCallback(() => {
-    if (callDocIdRef.current) {
-      setDoc(doc(db, 'calls', callDocIdRef.current), { status: 'rejected' }, { merge: true }).catch(() => {});
-    }
-    cleanup();
-    setCallState({ status: 'idle', remoteUserId: null, duration: 0, muted: false, speaker: false });
-  }, [cleanup]);
+  const rejectCall = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    try {
+      const inboxSnap = await (await import('firebase/firestore')).getDoc(doc(db, 'peerInbox', uid));
+      const inboxData = inboxSnap.data();
+      if (inboxData?.signalId) {
+        const peer = new WebRTCPeer(inboxData.callerId);
+        peer.reject(inboxData.signalId);
+      }
+      deleteDoc(doc(db, 'peerInbox', uid)).catch(() => {});
+    } catch {}
+
+    endCallInternal('rejected');
+  }, [endCallInternal]);
 
   return {
     callState,
