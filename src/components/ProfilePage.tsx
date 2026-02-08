@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
-import { Settings, Shield, Bell, Edit3, LogOut, ChevronRight, Copy, Check, BadgeCheck } from 'lucide-react';
+import { Settings, Shield, Bell, Edit3, LogOut, ChevronRight, Copy, Check, BadgeCheck, HelpCircle, FileText, BookOpen } from 'lucide-react';
 import { useState } from 'react';
 import { UserData } from '@/hooks/useUserStore';
 
-type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
+type ProfileSubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin' | 'support' | 'terms' | 'privacy-policy';
 
 interface ProfilePageProps {
   onNavigate?: (page: ProfileSubPage) => void;
@@ -30,6 +30,9 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
     { icon: Bell, label: 'Notifications', sub: 'Manage alerts', page: 'notifications' as const },
     { icon: Shield, label: 'Privacy & Safety', sub: 'Moderation rules', page: 'privacy' as const },
     { icon: Settings, label: 'Settings', sub: 'Account preferences', page: 'settings' as const },
+    { icon: HelpCircle, label: 'Help & Support', sub: 'FAQs and contact', page: 'support' as const },
+    { icon: FileText, label: 'Terms & Conditions', sub: 'Our policies', page: 'terms' as const },
+    { icon: BookOpen, label: 'Privacy Policy', sub: 'How we use your data', page: 'privacy-policy' as const },
   ];
 
   return (

@@ -17,6 +17,8 @@ import { SettingsPage } from '@/components/SettingsPage';
 import { AudioCallPage } from '@/components/AudioCallPage';
 import { UpgradePage } from '@/components/UpgradePage';
 import { AdminPanel, isAdmin } from '@/components/AdminPanel';
+import { SupportPage } from '@/components/SupportPage';
+import { TermsPage } from '@/components/TermsPage';
 import { TrendsLogo } from '@/components/TrendsLogo';
 import { useDiscovery } from '@/hooks/use-app';
 import { useUserStore } from '@/hooks/useUserStore';
@@ -26,10 +28,10 @@ import { ChatThread, UserProfile } from '@/lib/data';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { sendEmailVerification } from 'firebase/auth';
-import { Heart, ShieldCheck, Loader2, MailWarning, RefreshCw } from 'lucide-react';
+import { Heart, ShieldCheck, Loader2, MailWarning, RefreshCw, Search, X } from 'lucide-react';
 
 type Tab = 'discover' | 'matches' | 'chat' | 'profile';
-type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin';
+type SubPage = null | 'edit' | 'notifications' | 'privacy' | 'settings' | 'upgrade' | 'admin' | 'support' | 'terms' | 'privacy-policy';
 
 const Index = () => {
   const { firebaseUser, loading: authLoading, isNewUser, profileComplete, emailVerified, logout, markProfileComplete, refreshEmailVerification } = useAuth();
@@ -37,13 +39,14 @@ const Index = () => {
   const [showWelcome, setShowWelcome] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
 
-  const { currentProfile, like, skip, matches, hasMore, loading: discoverLoading, refresh: refreshDiscover } = useDiscovery(user.genderPreference);
+  const { currentProfile, like, skip, matches, hasMore, loading: discoverLoading, refresh: refreshDiscover, searchByUID, searchResult, searchLoading, searchError, clearSearch } = useDiscovery(user.genderPreference);
   const { chats, startChat } = useFirebaseChat();
   const [activeTab, setActiveTab] = useState<Tab>('discover');
   const [activeChat, setActiveChat] = useState<ChatThread | null>(null);
   const [viewingProfile, setViewingProfile] = useState<UserProfile | null>(null);
   const [profileSubPage, setProfileSubPage] = useState<SubPage>(null);
   const [callingUser, setCallingUser] = useState<UserProfile | null>(null);
+  const [uidSearch, setUidSearch] = useState('');
 
   const unreadCount = chats.reduce((sum, c) => sum + c.unread, 0);
 
@@ -130,6 +133,9 @@ const Index = () => {
   if (profileSubPage === 'privacy') return <PrivacySafetyPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'settings') return <SettingsPage onBack={() => setProfileSubPage(null)} />;
   if (profileSubPage === 'upgrade') return <UpgradePage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'support') return <SupportPage onBack={() => setProfileSubPage(null)} />;
+  if (profileSubPage === 'terms') return <TermsPage onBack={() => setProfileSubPage(null)} page="terms" />;
+  if (profileSubPage === 'privacy-policy') return <TermsPage onBack={() => setProfileSubPage(null)} page="privacy-policy" />;
   if (profileSubPage === 'admin') {
     return <AdminPanel onBack={() => setProfileSubPage(null)} adminEmail={user.email} />;
   }
@@ -150,7 +156,6 @@ const Index = () => {
         onMessage={async () => {
           const chatId = await startChat(viewingProfile.id);
           if (chatId) {
-            // Find or create the chat thread
             const thread: ChatThread = {
               id: chatId,
               user: viewingProfile,
@@ -185,6 +190,12 @@ const Index = () => {
       />
     );
   }
+
+  const handleUIDSearch = () => {
+    if (uidSearch.trim()) {
+      searchByUID(uidSearch.trim());
+    }
+  };
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
@@ -224,6 +235,56 @@ const Index = () => {
         <AnimatePresence mode="wait">
           {activeTab === 'discover' && (
             <motion.div key="discover" className="px-4 sm:px-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {/* UID Search Bar */}
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={uidSearch}
+                  onChange={(e) => setUidSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleUIDSearch()}
+                  placeholder="Search by UID (e.g. TR-A1B2C3D4E5F6)"
+                  className="w-full rounded-xl border border-border bg-card pl-9 pr-20 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {(uidSearch || searchResult || searchError) && (
+                    <button onClick={() => { setUidSearch(''); clearSearch(); }} className="p-1 text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button onClick={handleUIDSearch} disabled={searchLoading || !uidSearch.trim()}
+                    className="rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50">
+                    {searchLoading ? '...' : 'Search'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Search result */}
+              {searchError && (
+                <div className="mb-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive text-center">
+                  {searchError}
+                </div>
+              )}
+              {searchResult && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Search Result</p>
+                  <button onClick={() => setViewingProfile(searchResult)}
+                    className="w-full flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card text-left">
+                    {searchResult.avatar ? (
+                      <img src={searchResult.avatar} alt="" className="h-12 w-12 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full gradient-primary text-lg font-bold text-primary-foreground">
+                        {searchResult.name[0]}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{searchResult.name}{searchResult.age ? `, ${searchResult.age}` : ''}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{searchResult.uid}</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+
               {discoverLoading ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
