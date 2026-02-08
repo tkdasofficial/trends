@@ -76,10 +76,19 @@ export function ProfilePage({ onNavigate, onLogout, userData, emailVerified = fa
             {copied ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
           </button>
 
-          {/* Gender Preference */}
-          {userData?.genderPreference && (
-            <p className="mt-2 text-xs text-muted-foreground">Looking for: {userData.genderPreference}</p>
-          )}
+          {/* Gender & Preference */}
+          <div className="mt-3 flex items-center justify-center gap-3">
+            {userData?.gender && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                {userData.gender}
+              </span>
+            )}
+            {userData?.genderPreference && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                Looking for: {userData.genderPreference}
+              </span>
+            )}
+          </div>
 
           {userData?.interests && userData.interests.length > 0 && (
             <div className="mt-3 flex flex-wrap justify-center gap-1.5">
